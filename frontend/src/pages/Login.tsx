@@ -39,7 +39,7 @@ export function LoginPage() {
             3D Price <span className="text-gradient">Pro</span>
           </h1>
           <p className="text-sm text-slate-500 dark:text-slate-400">
-            {modo === 'login' ? 'Entre na sua conta' : 'Crie o primeiro acesso'}
+            {modo === 'login' ? 'Entre na sua conta' : 'Crie sua conta'}
           </p>
         </div>
 

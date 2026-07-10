@@ -25,10 +25,11 @@ const loginSchema = z.object({
 /**
  * Registro de usuarios.
  *
- * Bootstrap seguro: se ainda NAO existe nenhum usuario, a primeira conta e
- * criada livremente e vira `admin`. A partir dai, apenas um `admin` autenticado
- * pode cadastrar novos usuarios (e escolher o papel; default `operador`).
- * Isso fecha o auto-cadastro publico sem risco de lockout inicial.
+ * Auto-cadastro publico e permitido. O primeiro usuario do sistema vira
+ * `admin` (bootstrap). Depois disso, quem se cadastra sozinho (sem estar
+ * autenticado como admin) sempre vira `operador` — o campo `role` do corpo
+ * so e respeitado quando quem chama ja e um admin autenticado, evitando que
+ * qualquer visitante se auto-promova a admin.
  */
 authRouter.post(
   '/registro',
@@ -38,23 +39,15 @@ authRouter.post(
 
     const total = await prisma.user.count();
     const bootstrap = total === 0;
-
-    // Depois do primeiro usuario, exige um admin autenticado.
-    if (!bootstrap) {
-      const solicitante = usuarioOpcional(req);
-      if (!solicitante) {
-        throw new AppError(401, 'Autenticacao necessaria para cadastrar usuarios', 'NAO_AUTENTICADO');
-      }
-      if (solicitante.role !== 'admin') {
-        throw new AppError(403, 'Apenas administradores podem cadastrar usuarios', 'SEM_PERMISSAO');
-      }
-    }
+    const solicitante = usuarioOpcional(req);
+    const solicitanteEhAdmin = solicitante?.role === 'admin';
 
     const existe = await prisma.user.findUnique({ where: { email } });
     if (existe) throw conflito('E-mail ja cadastrado');
 
-    // O primeiro usuario e sempre admin; depois, o admin escolhe (default operador).
-    const role = bootstrap ? 'admin' : (papelSolicitado ?? 'operador');
+    // Primeiro usuario e sempre admin; um admin autenticado escolhe o papel;
+    // qualquer outro auto-cadastro vira operador, ignorando o role pedido.
+    const role = bootstrap ? 'admin' : solicitanteEhAdmin ? (papelSolicitado ?? 'operador') : 'operador';
 
     const user = await prisma.user.create({
       data: { email, senhaHash: await gerarHash(senha), role },
