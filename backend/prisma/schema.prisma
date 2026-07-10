@@ -1,0 +1,118 @@
+// Schema do banco (PostgreSQL em producao via DATABASE_URL).
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id         Int         @id @default(autoincrement())
+  email      String      @unique
+  senhaHash  String
+  role       String      @default("operador") // admin | operador
+  criadoEm   DateTime    @default(now())
+  orcamentos Orcamento[]
+}
+
+model Material {
+  id              Int         @id @default(autoincrement())
+  nome            String
+  tipo            String // PLA, PETG, ABS, resina...
+  precoKg         Float
+  densidade       Float?
+  cor             String?
+  estoqueG        Float       @default(0)
+  estoqueMinimoG  Float       @default(0)
+  taxaDesperdicio Float       @default(0.05) // fracao (0.05 = 5%)
+  ativo           Boolean     @default(true)
+  criadoEm        DateTime    @default(now())
+  orcamentos      Orcamento[]
+}
+
+model Impressora {
+  id                   Int         @id @default(autoincrement())
+  nome                 String
+  marca                String?
+  modelo               String?
+  dataCompra           String? // ISO "AAAA-MM-DD" (data de compra)
+  potenciaW            Float
+  valorAquisicao       Float
+  vidaUtilH            Float
+  custoManutencaoAnual Float       @default(0) // custo anual de manutencao
+  taxaManutencao       Float       @default(0)
+  taxaFalhaPadrao      Float       @default(0.1) // taxa media de falha (fracao); prefill no orcamento
+  ativo                Boolean     @default(true)
+  criadoEm             DateTime    @default(now())
+  orcamentos           Orcamento[]
+}
+
+model CustoFixo {
+  id          Int      @id @default(autoincrement())
+  nome        String
+  valorMensal Float
+  criadoEm    DateTime @default(now())
+}
+
+// Custos variaveis por peca (cola, alcool, embalagem, etiqueta, frete...).
+// Sao SELECIONADOS por orcamento; a soma dos escolhidos entra no custo total.
+model CustoVariavel {
+  id            Int      @id @default(autoincrement())
+  nome          String
+  valorUnitario Float // custo por peca quando aplicado
+  ativo         Boolean  @default(true)
+  criadoEm      DateTime @default(now())
+}
+
+// Moedas para EXIBICAO. O calculo e sempre na moeda base EUR (fonte da verdade);
+// a moeda so converte valores mostrados. taxaParaBase = quanto vale 1 unidade em EUR.
+model Moeda {
+  codigo       String   @id // "EUR", "USD", "GBP"
+  nome         String
+  simbolo      String
+  // @map preserva a coluna historica "taxaParaBRL" no banco (sem migracao de dados).
+  taxaParaBase Float    @map("taxaParaBRL") // 1 unidade = X EUR; EUR = 1
+  base         Boolean  @default(false) // EUR e a base, sempre taxa 1
+  criadoEm     DateTime @default(now())
+}
+
+// Parametros globais de precificacao (linha unica, id = 1).
+model Configuracao {
+  id                 Int   @id @default(1)
+  precoKwh           Float @default(0.95)
+  valorHoraTrabalho  Float @default(20)
+  // Horas produtivas da impressora no mes: divisor do rateio de custo fixo
+  // (custo fixo/hora = custosFixosMensais / horasProdutivasMes).
+  horasProdutivasMes Float @default(160)
+  margemMinima       Float @default(0.2)
+}
+
+model Orcamento {
+  id            Int      @id @default(autoincrement())
+  cliente       String?
+  telefone      String? // WhatsApp do cliente (com DDI), para envio do orcamento
+  descricaoPeca String?
+  status        String   @default("pendente") // pendente | aprovado | recusado
+
+  // Snapshots imutaveis (regras 5 e 6): guardam entrada e resultado no momento
+  // da emissao. Reajuste de material/config nao altera orcamentos ja emitidos.
+  entradaJson   String
+  resultadoJson String
+
+  precoFinal   Float
+  precoCobrado Float
+  pesoG        Float
+
+  materialId     Int
+  impressoraId   Int
+  usuarioId      Int?
+  estoqueBaixado Boolean   @default(false)
+  criadoEm       DateTime  @default(now())
+  aprovadoEm     DateTime?
+
+  material   Material   @relation(fields: [materialId], references: [id])
+  impressora Impressora @relation(fields: [impressoraId], references: [id])
+  usuario    User?      @relation(fields: [usuarioId], references: [id])
+}

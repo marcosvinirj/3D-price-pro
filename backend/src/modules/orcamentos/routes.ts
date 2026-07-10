@@ -1,0 +1,197 @@
+/** Rotas de orcamentos e simulador de precificacao. */
+import { Router } from 'express';
+import { z } from 'zod';
+import { asyncHandler } from '../../http/errors.js';
+import { validarBody, obterId } from '../../http/validate.js';
+import {
+  orcamentoInputSchema,
+  simular,
+  criarOrcamento,
+  aprovarOrcamento,
+  recusarOrcamento,
+  listarOrcamentos,
+  obterOrcamento,
+} from './service.js';
+import { gerarPdfOrcamento, nomeArquivoPdf } from './pdf.js';
+import { obterMoedaOuBase } from '../moedas/service.js';
+
+/** Escapa um campo para CSV (aspas duplas + envolve se tiver separador). */
+function campoCsv(v: unknown): string {
+  const s = v == null ? '' : String(v);
+  return /[";\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+}
+
+/** Escapa texto para XML (SpreadsheetML). */
+function xmlEsc(v: unknown): string {
+  return String(v ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+/** Celula tipada para SpreadsheetML (numero vira Number; resto String). */
+function celulaXls(v: unknown): string {
+  if (typeof v === 'number' && Number.isFinite(v)) {
+    return `<Cell><Data ss:Type="Number">${v}</Data></Cell>`;
+  }
+  return `<Cell><Data ss:Type="String">${xmlEsc(v)}</Data></Cell>`;
+}
+
+export const orcamentosRouter = Router();
+
+/** Simulador "e se" — recalcula o preco sem persistir. */
+orcamentosRouter.post(
+  '/simular',
+  validarBody(orcamentoInputSchema),
+  asyncHandler(async (req, res) => {
+    res.json(await simular(req.body));
+  }),
+);
+
+orcamentosRouter.post(
+  '/',
+  validarBody(orcamentoInputSchema),
+  asyncHandler(async (req, res) => {
+    const resultado = await criarOrcamento(req.body, req.usuario?.sub);
+    res.status(201).json(resultado);
+  }),
+);
+
+const filtroSchema = z.object({
+  status: z.enum(['pendente', 'aprovado', 'recusado']).optional(),
+});
+
+orcamentosRouter.get(
+  '/',
+  asyncHandler(async (req, res) => {
+    const { status } = filtroSchema.parse(req.query);
+    res.json(await listarOrcamentos(status));
+  }),
+);
+
+/** Exporta todos os orcamentos em CSV (Excel-friendly, separador ';'). */
+orcamentosRouter.get(
+  '/export/csv',
+  asyncHandler(async (_req, res) => {
+    const itens = await listarOrcamentos();
+    const cols = [
+      'id',
+      'criadoEm',
+      'cliente',
+      'peca',
+      'material',
+      'impressora',
+      'pesoG',
+      'precoFinal',
+      'precoCobrado',
+      'status',
+    ];
+    const linhas = itens.map((o) =>
+      [
+        o.id,
+        new Date(o.criadoEm).toISOString(),
+        o.cliente ?? '',
+        o.descricaoPeca ?? '',
+        o.material.nome,
+        o.impressora.nome,
+        o.pesoG,
+        o.precoFinal,
+        o.precoCobrado,
+        o.status,
+      ]
+        .map(campoCsv)
+        .join(';'),
+    );
+    const csv = '﻿' + [cols.join(';'), ...linhas].join('\r\n'); // BOM p/ Excel
+    res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+    res.setHeader('Content-Disposition', 'attachment; filename="orcamentos.csv"');
+    res.send(csv);
+  }),
+);
+
+/** Exporta todos os orcamentos em Excel (SpreadsheetML, abre nativo no Excel). */
+orcamentosRouter.get(
+  '/export/xlsx',
+  asyncHandler(async (_req, res) => {
+    const itens = await listarOrcamentos();
+    const cols = [
+      'id',
+      'criadoEm',
+      'cliente',
+      'peca',
+      'material',
+      'impressora',
+      'pesoG',
+      'precoFinal',
+      'precoCobrado',
+      'status',
+    ];
+    const header = `<Row>${cols.map((c) => celulaXls(c)).join('')}</Row>`;
+    const linhas = itens
+      .map((o) =>
+        `<Row>${[
+          o.id,
+          new Date(o.criadoEm).toISOString().slice(0, 10),
+          o.cliente ?? '',
+          o.descricaoPeca ?? '',
+          o.material.nome,
+          o.impressora.nome,
+          o.pesoG,
+          o.precoFinal,
+          o.precoCobrado,
+          o.status,
+        ]
+          .map((v) => celulaXls(v))
+          .join('')}</Row>`,
+      )
+      .join('');
+    const xml =
+      '<?xml version="1.0" encoding="UTF-8"?>\n' +
+      '<?mso-application progid="Excel.Sheet"?>\n' +
+      '<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet" ' +
+      'xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">' +
+      '<Worksheet ss:Name="Orcamentos"><Table>' +
+      header +
+      linhas +
+      '</Table></Worksheet></Workbook>';
+    res.setHeader('Content-Type', 'application/vnd.ms-excel; charset=utf-8');
+    res.setHeader('Content-Disposition', 'attachment; filename="orcamentos.xls"');
+    res.send(xml);
+  }),
+);
+
+orcamentosRouter.get(
+  '/:id',
+  asyncHandler(async (req, res) => {
+    res.json(await obterOrcamento(obterId(req)));
+  }),
+);
+
+/** Gera o PDF do orcamento (voltado ao cliente). */
+orcamentosRouter.get(
+  '/:id/pdf',
+  asyncHandler(async (req, res) => {
+    const id = obterId(req);
+    const codigo = typeof req.query.moeda === 'string' ? req.query.moeda : undefined;
+    const moeda = await obterMoedaOuBase(codigo);
+    const bytes = await gerarPdfOrcamento(id, moeda);
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `inline; filename="${nomeArquivoPdf(id)}"`);
+    res.send(Buffer.from(bytes));
+  }),
+);
+
+orcamentosRouter.post(
+  '/:id/aprovar',
+  asyncHandler(async (req, res) => {
+    res.json(await aprovarOrcamento(obterId(req)));
+  }),
+);
+
+orcamentosRouter.post(
+  '/:id/recusar',
+  asyncHandler(async (req, res) => {
+    res.json(await recusarOrcamento(obterId(req)));
+  }),
+);
