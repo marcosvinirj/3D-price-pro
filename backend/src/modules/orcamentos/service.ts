@@ -34,16 +34,16 @@ export const orcamentoInputSchema = z.object({
 
 export type OrcamentoInput = z.infer<typeof orcamentoInputSchema>;
 
-/** Carrega dependencias e monta a entrada do motor de precificacao. */
-async function montarCalculo(input: OrcamentoInput) {
+/** Carrega dependencias (do usuario dono) e monta a entrada do motor de precificacao. */
+async function montarCalculo(input: OrcamentoInput, usuarioId: number) {
   const idsVariaveis = input.custosVariaveisIds ?? [];
   const [material, impressora, config, custosFixos, custosVariaveis] = await Promise.all([
-    prisma.material.findUnique({ where: { id: input.materialId } }),
-    prisma.impressora.findUnique({ where: { id: input.impressoraId } }),
-    obterConfiguracao(),
-    prisma.custoFixo.findMany(),
+    prisma.material.findFirst({ where: { id: input.materialId, usuarioId } }),
+    prisma.impressora.findFirst({ where: { id: input.impressoraId, usuarioId } }),
+    obterConfiguracao(usuarioId),
+    prisma.custoFixo.findMany({ where: { usuarioId } }),
     idsVariaveis.length
-      ? prisma.custoVariavel.findMany({ where: { id: { in: idsVariaveis } } })
+      ? prisma.custoVariavel.findMany({ where: { id: { in: idsVariaveis }, usuarioId } })
       : Promise.resolve([]),
   ]);
 
@@ -86,12 +86,15 @@ async function montarCalculo(input: OrcamentoInput) {
 }
 
 /** Simulador "e se": calcula sem persistir. */
-export async function simular(input: OrcamentoInput): Promise<{
+export async function simular(
+  input: OrcamentoInput,
+  usuarioId: number,
+): Promise<{
   resultado: ResultadoPrecificacao;
   consumoG: number;
   estoqueSuficiente: boolean;
 }> {
-  const { material, resultado, consumoG } = await montarCalculo(input);
+  const { material, resultado, consumoG } = await montarCalculo(input, usuarioId);
   return { resultado, consumoG, estoqueSuficiente: material.estoqueG >= consumoG };
 }
 
@@ -100,8 +103,8 @@ export async function simular(input: OrcamentoInput): Promise<{
  * 5 e 6). Bloqueia se a margem do preco de tabela furar a minima (regra 2).
  * NAO baixa estoque aqui — a baixa ocorre na aprovacao (regra 4).
  */
-export async function criarOrcamento(input: OrcamentoInput, usuarioId?: number) {
-  const { entradaMotor, resultado, consumoG, material } = await montarCalculo(input);
+export async function criarOrcamento(input: OrcamentoInput, usuarioId: number) {
+  const { entradaMotor, resultado, consumoG, material } = await montarCalculo(input, usuarioId);
 
   // Regra 2: nao permitir salvar preco com margem abaixo da minima.
   if (!resultado.margem.atingeMinima) {
@@ -126,7 +129,7 @@ export async function criarOrcamento(input: OrcamentoInput, usuarioId?: number) 
       pesoG: input.peca.pesoG,
       materialId: input.materialId,
       impressoraId: input.impressoraId,
-      usuarioId: usuarioId ?? null,
+      usuarioId,
     },
   });
 
@@ -146,8 +149,8 @@ export async function criarOrcamento(input: OrcamentoInput, usuarioId?: number) 
  * Aprova um orcamento: baixa o estoque do material (regra 4 — nunca negativo)
  * e torna o registro imutavel (regra 5). Idempotencia protegida por status.
  */
-export async function aprovarOrcamento(id: number) {
-  const orcamento = await prisma.orcamento.findUnique({ where: { id } });
+export async function aprovarOrcamento(id: number, usuarioId: number) {
+  const orcamento = await prisma.orcamento.findFirst({ where: { id, usuarioId } });
   if (!orcamento) throw naoEncontrado('Orcamento');
   if (orcamento.status === 'aprovado') throw conflito('Orcamento ja aprovado (imutavel)');
   if (orcamento.status === 'recusado') throw conflito('Orcamento recusado nao pode ser aprovado');
@@ -185,24 +188,24 @@ export async function aprovarOrcamento(id: number) {
 }
 
 /** Recusa um orcamento pendente. */
-export async function recusarOrcamento(id: number) {
-  const orcamento = await prisma.orcamento.findUnique({ where: { id } });
+export async function recusarOrcamento(id: number, usuarioId: number) {
+  const orcamento = await prisma.orcamento.findFirst({ where: { id, usuarioId } });
   if (!orcamento) throw naoEncontrado('Orcamento');
   if (orcamento.status === 'aprovado') throw conflito('Orcamento aprovado nao pode ser recusado');
   return prisma.orcamento.update({ where: { id }, data: { status: 'recusado' } });
 }
 
-export async function listarOrcamentos(status?: string) {
+export async function listarOrcamentos(usuarioId: number, status?: string) {
   return prisma.orcamento.findMany({
-    where: status ? { status } : {},
+    where: status ? { usuarioId, status } : { usuarioId },
     orderBy: { criadoEm: 'desc' },
     include: { material: { select: { nome: true } }, impressora: { select: { nome: true } } },
   });
 }
 
-export async function obterOrcamento(id: number) {
-  const orcamento = await prisma.orcamento.findUnique({
-    where: { id },
+export async function obterOrcamento(id: number, usuarioId: number) {
+  const orcamento = await prisma.orcamento.findFirst({
+    where: { id, usuarioId },
     include: { material: true, impressora: true },
   });
   if (!orcamento) throw naoEncontrado('Orcamento');

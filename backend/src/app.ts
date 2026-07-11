@@ -2,7 +2,7 @@
 import express from 'express';
 import cors from 'cors';
 import { errorHandler } from './http/errors.js';
-import { autenticar, exigirAdminParaEscrita } from './auth/middleware.js';
+import { autenticar } from './auth/middleware.js';
 import { authRouter } from './auth/routes.js';
 import { materiaisRouter } from './modules/materiais/routes.js';
 import { impressorasRouter } from './modules/impressoras/routes.js';
@@ -24,16 +24,15 @@ export function criarApp() {
   // Rotas publicas
   app.use('/auth', authRouter);
 
-  // Rotas de configuracao de negocio: leitura para qualquer autenticado,
-  // escrita (criar/editar/remover) restrita a admin.
-  app.use('/materiais', autenticar, exigirAdminParaEscrita, materiaisRouter);
-  app.use('/impressoras', autenticar, exigirAdminParaEscrita, impressorasRouter);
-  app.use('/custos-fixos', autenticar, exigirAdminParaEscrita, custosFixosRouter);
-  app.use('/custos-variaveis', autenticar, exigirAdminParaEscrita, custosVariaveisRouter);
-  app.use('/configuracao', autenticar, exigirAdminParaEscrita, configuracaoRouter);
-  app.use('/moedas', autenticar, exigirAdminParaEscrita, moedasRouter);
-
-  // Trabalho operacional do dia a dia: acessivel a qualquer usuario autenticado.
+  // Multi-tenant: cada usuario autenticado tem acesso total (leitura e
+  // escrita), mas apenas aos proprios dados — o filtro por dono acontece
+  // dentro de cada modulo (service/routes), a partir de req.usuario.sub.
+  app.use('/materiais', autenticar, materiaisRouter);
+  app.use('/impressoras', autenticar, impressorasRouter);
+  app.use('/custos-fixos', autenticar, custosFixosRouter);
+  app.use('/custos-variaveis', autenticar, custosVariaveisRouter);
+  app.use('/configuracao', autenticar, configuracaoRouter);
+  app.use('/moedas', autenticar, moedasRouter);
   app.use('/orcamentos', autenticar, orcamentosRouter);
   app.use('/dashboard', autenticar, dashboardRouter);
 

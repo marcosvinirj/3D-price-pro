@@ -16,8 +16,9 @@ function chaveMes(d: Date) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
 }
 
-export async function obterMetricas() {
+export async function obterMetricas(usuarioId: number) {
   const orcamentos = await prisma.orcamento.findMany({
+    where: { usuarioId },
     include: {
       material: { select: { nome: true } },
       impressora: { select: { nome: true } },

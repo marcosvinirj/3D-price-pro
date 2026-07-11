@@ -12,4 +12,4 @@ backend/prisma/dev.db-journal
 *.db-journal
 
 # Config local do Claude Code (especifico da maquina)
-.claude/settings.local.json
+.claude/

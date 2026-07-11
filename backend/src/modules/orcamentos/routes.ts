@@ -45,7 +45,7 @@ orcamentosRouter.post(
   '/simular',
   validarBody(orcamentoInputSchema),
   asyncHandler(async (req, res) => {
-    res.json(await simular(req.body));
+    res.json(await simular(req.body, req.usuario!.sub));
   }),
 );
 
@@ -53,7 +53,7 @@ orcamentosRouter.post(
   '/',
   validarBody(orcamentoInputSchema),
   asyncHandler(async (req, res) => {
-    const resultado = await criarOrcamento(req.body, req.usuario?.sub);
+    const resultado = await criarOrcamento(req.body, req.usuario!.sub);
     res.status(201).json(resultado);
   }),
 );
@@ -66,15 +66,15 @@ orcamentosRouter.get(
   '/',
   asyncHandler(async (req, res) => {
     const { status } = filtroSchema.parse(req.query);
-    res.json(await listarOrcamentos(status));
+    res.json(await listarOrcamentos(req.usuario!.sub, status));
   }),
 );
 
 /** Exporta todos os orcamentos em CSV (Excel-friendly, separador ';'). */
 orcamentosRouter.get(
   '/export/csv',
-  asyncHandler(async (_req, res) => {
-    const itens = await listarOrcamentos();
+  asyncHandler(async (req, res) => {
+    const itens = await listarOrcamentos(req.usuario!.sub);
     const cols = [
       'id',
       'criadoEm',
@@ -113,8 +113,8 @@ orcamentosRouter.get(
 /** Exporta todos os orcamentos em Excel (SpreadsheetML, abre nativo no Excel). */
 orcamentosRouter.get(
   '/export/xlsx',
-  asyncHandler(async (_req, res) => {
-    const itens = await listarOrcamentos();
+  asyncHandler(async (req, res) => {
+    const itens = await listarOrcamentos(req.usuario!.sub);
     const cols = [
       'id',
       'criadoEm',
@@ -164,7 +164,7 @@ orcamentosRouter.get(
 orcamentosRouter.get(
   '/:id',
   asyncHandler(async (req, res) => {
-    res.json(await obterOrcamento(obterId(req)));
+    res.json(await obterOrcamento(obterId(req), req.usuario!.sub));
   }),
 );
 
@@ -172,9 +172,11 @@ orcamentosRouter.get(
 orcamentosRouter.get(
   '/:id/pdf',
   asyncHandler(async (req, res) => {
+    const usuarioId = req.usuario!.sub;
     const id = obterId(req);
+    await obterOrcamento(id, usuarioId); // garante que o orcamento e' do usuario (404 senao)
     const codigo = typeof req.query.moeda === 'string' ? req.query.moeda : undefined;
-    const moeda = await obterMoedaOuBase(codigo);
+    const moeda = await obterMoedaOuBase(usuarioId, codigo);
     const bytes = await gerarPdfOrcamento(id, moeda);
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `inline; filename="${nomeArquivoPdf(id)}"`);
@@ -185,13 +187,13 @@ orcamentosRouter.get(
 orcamentosRouter.post(
   '/:id/aprovar',
   asyncHandler(async (req, res) => {
-    res.json(await aprovarOrcamento(obterId(req)));
+    res.json(await aprovarOrcamento(obterId(req), req.usuario!.sub));
   }),
 );
 
 orcamentosRouter.post(
   '/:id/recusar',
   asyncHandler(async (req, res) => {
-    res.json(await recusarOrcamento(obterId(req)));
+    res.json(await recusarOrcamento(obterId(req), req.usuario!.sub));
   }),
 );

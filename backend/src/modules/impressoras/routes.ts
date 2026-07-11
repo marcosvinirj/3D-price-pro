@@ -24,15 +24,22 @@ const impressoraUpdateSchema = impressoraSchema.partial();
 
 impressorasRouter.get(
   '/',
-  asyncHandler(async (_req, res) => {
-    res.json(await prisma.impressora.findMany({ where: { ativo: true }, orderBy: { nome: 'asc' } }));
+  asyncHandler(async (req, res) => {
+    res.json(
+      await prisma.impressora.findMany({
+        where: { ativo: true, usuarioId: req.usuario!.sub },
+        orderBy: { nome: 'asc' },
+      }),
+    );
   }),
 );
 
 impressorasRouter.get(
   '/:id',
   asyncHandler(async (req, res) => {
-    const item = await prisma.impressora.findUnique({ where: { id: obterId(req) } });
+    const item = await prisma.impressora.findFirst({
+      where: { id: obterId(req), usuarioId: req.usuario!.sub },
+    });
     if (!item) throw naoEncontrado('Impressora');
     res.json(item);
   }),
@@ -42,7 +49,9 @@ impressorasRouter.post(
   '/',
   validarBody(impressoraSchema),
   asyncHandler(async (req, res) => {
-    res.status(201).json(await prisma.impressora.create({ data: req.body }));
+    res
+      .status(201)
+      .json(await prisma.impressora.create({ data: { ...req.body, usuarioId: req.usuario!.sub } }));
   }),
 );
 
@@ -51,7 +60,8 @@ impressorasRouter.patch(
   validarBody(impressoraUpdateSchema),
   asyncHandler(async (req, res) => {
     const id = obterId(req);
-    if (!(await prisma.impressora.findUnique({ where: { id } }))) throw naoEncontrado('Impressora');
+    if (!(await prisma.impressora.findFirst({ where: { id, usuarioId: req.usuario!.sub } })))
+      throw naoEncontrado('Impressora');
     res.json(await prisma.impressora.update({ where: { id }, data: req.body }));
   }),
 );
@@ -60,7 +70,8 @@ impressorasRouter.delete(
   '/:id',
   asyncHandler(async (req, res) => {
     const id = obterId(req);
-    if (!(await prisma.impressora.findUnique({ where: { id } }))) throw naoEncontrado('Impressora');
+    if (!(await prisma.impressora.findFirst({ where: { id, usuarioId: req.usuario!.sub } })))
+      throw naoEncontrado('Impressora');
     await prisma.impressora.update({ where: { id }, data: { ativo: false } });
     res.status(204).end();
   }),

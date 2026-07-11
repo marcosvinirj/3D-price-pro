@@ -15,8 +15,11 @@ const custoVariavelSchema = z.object({
 
 custosVariaveisRouter.get(
   '/',
-  asyncHandler(async (_req, res) => {
-    const itens = await prisma.custoVariavel.findMany({ orderBy: { nome: 'asc' } });
+  asyncHandler(async (req, res) => {
+    const itens = await prisma.custoVariavel.findMany({
+      where: { usuarioId: req.usuario!.sub },
+      orderBy: { nome: 'asc' },
+    });
     res.json(itens);
   }),
 );
@@ -25,7 +28,9 @@ custosVariaveisRouter.post(
   '/',
   validarBody(custoVariavelSchema),
   asyncHandler(async (req, res) => {
-    res.status(201).json(await prisma.custoVariavel.create({ data: req.body }));
+    res
+      .status(201)
+      .json(await prisma.custoVariavel.create({ data: { ...req.body, usuarioId: req.usuario!.sub } }));
   }),
 );
 
@@ -34,7 +39,7 @@ custosVariaveisRouter.patch(
   validarBody(custoVariavelSchema.partial()),
   asyncHandler(async (req, res) => {
     const id = obterId(req);
-    if (!(await prisma.custoVariavel.findUnique({ where: { id } })))
+    if (!(await prisma.custoVariavel.findFirst({ where: { id, usuarioId: req.usuario!.sub } })))
       throw naoEncontrado('Custo variavel');
     res.json(await prisma.custoVariavel.update({ where: { id }, data: req.body }));
   }),
@@ -44,7 +49,7 @@ custosVariaveisRouter.delete(
   '/:id',
   asyncHandler(async (req, res) => {
     const id = obterId(req);
-    if (!(await prisma.custoVariavel.findUnique({ where: { id } })))
+    if (!(await prisma.custoVariavel.findFirst({ where: { id, usuarioId: req.usuario!.sub } })))
       throw naoEncontrado('Custo variavel');
     await prisma.custoVariavel.delete({ where: { id } });
     res.status(204).end();

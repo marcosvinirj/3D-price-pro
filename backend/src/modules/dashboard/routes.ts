@@ -7,7 +7,7 @@ export const dashboardRouter = Router();
 
 dashboardRouter.get(
   '/',
-  asyncHandler(async (_req, res) => {
-    res.json(await obterMetricas());
+  asyncHandler(async (req, res) => {
+    res.json(await obterMetricas(req.usuario!.sub));
   }),
 );

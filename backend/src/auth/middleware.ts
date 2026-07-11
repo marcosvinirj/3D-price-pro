@@ -33,31 +33,6 @@ export function usuarioOpcional(req: Request): PayloadToken | null {
   }
 }
 
-/** Exige que o usuario tenha um dos papeis informados. */
-export function exigirPapel(...papeis: string[]) {
-  return (req: Request, _res: Response, next: NextFunction) => {
-    if (!req.usuario) throw new AppError(401, 'Nao autenticado', 'NAO_AUTENTICADO');
-    if (!papeis.includes(req.usuario.role)) {
-      throw new AppError(403, 'Sem permissao', 'SEM_PERMISSAO');
-    }
-    next();
-  };
-}
-
-/** Metodos HTTP que apenas leem (nao alteram estado). */
-const METODOS_LEITURA = new Set(['GET', 'HEAD', 'OPTIONS']);
-
-/**
- * Exige papel `admin` para metodos de escrita (POST/PUT/PATCH/DELETE),
- * mas libera leituras (GET/HEAD) a qualquer usuario autenticado. Usado nos
- * recursos de configuracao de negocio, que o operador precisa consultar para
- * montar orcamentos, mas nao deve poder alterar.
- */
-export function exigirAdminParaEscrita(req: Request, res: Response, next: NextFunction) {
-  if (METODOS_LEITURA.has(req.method)) return next();
-  return exigirPapel('admin')(req, res, next);
-}
-
 // Augmenta o Request do Express para carregar o usuario autenticado.
 declare global {
   // eslint-disable-next-line @typescript-eslint/no-namespace

@@ -27,9 +27,9 @@ function comAlerta<T extends { estoqueG: number; estoqueMinimoG: number }>(m: T)
 
 materiaisRouter.get(
   '/',
-  asyncHandler(async (_req, res) => {
+  asyncHandler(async (req, res) => {
     const itens = await prisma.material.findMany({
-      where: { ativo: true },
+      where: { ativo: true, usuarioId: req.usuario!.sub },
       orderBy: { nome: 'asc' },
     });
     res.json(itens.map(comAlerta));
@@ -38,8 +38,10 @@ materiaisRouter.get(
 
 materiaisRouter.get(
   '/alertas/estoque-baixo',
-  asyncHandler(async (_req, res) => {
-    const todos = await prisma.material.findMany({ where: { ativo: true } });
+  asyncHandler(async (req, res) => {
+    const todos = await prisma.material.findMany({
+      where: { ativo: true, usuarioId: req.usuario!.sub },
+    });
     res.json(todos.filter((m) => m.estoqueG <= m.estoqueMinimoG).map(comAlerta));
   }),
 );
@@ -47,7 +49,9 @@ materiaisRouter.get(
 materiaisRouter.get(
   '/:id',
   asyncHandler(async (req, res) => {
-    const material = await prisma.material.findUnique({ where: { id: obterId(req) } });
+    const material = await prisma.material.findFirst({
+      where: { id: obterId(req), usuarioId: req.usuario!.sub },
+    });
     if (!material) throw naoEncontrado('Material');
     res.json(comAlerta(material));
   }),
@@ -57,7 +61,9 @@ materiaisRouter.post(
   '/',
   validarBody(materialSchema),
   asyncHandler(async (req, res) => {
-    const material = await prisma.material.create({ data: req.body });
+    const material = await prisma.material.create({
+      data: { ...req.body, usuarioId: req.usuario!.sub },
+    });
     res.status(201).json(comAlerta(material));
   }),
 );
@@ -67,7 +73,7 @@ materiaisRouter.patch(
   validarBody(materialUpdateSchema),
   asyncHandler(async (req, res) => {
     const id = obterId(req);
-    const existe = await prisma.material.findUnique({ where: { id } });
+    const existe = await prisma.material.findFirst({ where: { id, usuarioId: req.usuario!.sub } });
     if (!existe) throw naoEncontrado('Material');
     const material = await prisma.material.update({ where: { id }, data: req.body });
     res.json(comAlerta(material));
@@ -78,7 +84,7 @@ materiaisRouter.delete(
   '/:id',
   asyncHandler(async (req, res) => {
     const id = obterId(req);
-    const existe = await prisma.material.findUnique({ where: { id } });
+    const existe = await prisma.material.findFirst({ where: { id, usuarioId: req.usuario!.sub } });
     if (!existe) throw naoEncontrado('Material');
     // Soft-delete: preserva integridade dos orcamentos historicos (regra 6).
     await prisma.material.update({ where: { id }, data: { ativo: false } });

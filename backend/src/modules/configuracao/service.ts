@@ -1,10 +1,10 @@
-/** Acesso aos parametros globais de precificacao (linha unica, id = 1). */
+/** Acesso aos parametros de precificacao de um usuario (uma linha por usuario). */
 import { prisma } from '../../db/prisma.js';
 
-export async function obterConfiguracao() {
+export async function obterConfiguracao(usuarioId: number) {
   return prisma.configuracao.upsert({
-    where: { id: 1 },
+    where: { usuarioId },
     update: {},
-    create: { id: 1 },
+    create: { usuarioId },
   });
 }

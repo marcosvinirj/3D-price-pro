@@ -14,8 +14,11 @@ const custoFixoSchema = z.object({
 
 custosFixosRouter.get(
   '/',
-  asyncHandler(async (_req, res) => {
-    const itens = await prisma.custoFixo.findMany({ orderBy: { nome: 'asc' } });
+  asyncHandler(async (req, res) => {
+    const itens = await prisma.custoFixo.findMany({
+      where: { usuarioId: req.usuario!.sub },
+      orderBy: { nome: 'asc' },
+    });
     const total = itens.reduce((s, c) => s + c.valorMensal, 0);
     res.json({ itens, totalMensal: total });
   }),
@@ -25,7 +28,9 @@ custosFixosRouter.post(
   '/',
   validarBody(custoFixoSchema),
   asyncHandler(async (req, res) => {
-    res.status(201).json(await prisma.custoFixo.create({ data: req.body }));
+    res
+      .status(201)
+      .json(await prisma.custoFixo.create({ data: { ...req.body, usuarioId: req.usuario!.sub } }));
   }),
 );
 
@@ -34,7 +39,8 @@ custosFixosRouter.patch(
   validarBody(custoFixoSchema.partial()),
   asyncHandler(async (req, res) => {
     const id = obterId(req);
-    if (!(await prisma.custoFixo.findUnique({ where: { id } }))) throw naoEncontrado('Custo fixo');
+    if (!(await prisma.custoFixo.findFirst({ where: { id, usuarioId: req.usuario!.sub } })))
+      throw naoEncontrado('Custo fixo');
     res.json(await prisma.custoFixo.update({ where: { id }, data: req.body }));
   }),
 );
@@ -43,7 +49,8 @@ custosFixosRouter.delete(
   '/:id',
   asyncHandler(async (req, res) => {
     const id = obterId(req);
-    if (!(await prisma.custoFixo.findUnique({ where: { id } }))) throw naoEncontrado('Custo fixo');
+    if (!(await prisma.custoFixo.findFirst({ where: { id, usuarioId: req.usuario!.sub } })))
+      throw naoEncontrado('Custo fixo');
     await prisma.custoFixo.delete({ where: { id } });
     res.status(204).end();
   }),

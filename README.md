@@ -47,7 +47,7 @@ Todas as rotas (exceto `/auth/*` e `/health`) exigem header
 
 | Método | Rota | O quê |
 |--------|------|-------|
-| POST | `/auth/registro` | bootstrap: 1º usuário vira `admin`; depois, só `admin` cadastra → token |
+| POST | `/auth/registro` | auto-cadastro público → token (ver Multi-tenant abaixo) |
 | POST | `/auth/login` | login → token JWT |
 | CRUD | `/materiais` | materiais; `GET /materiais/alertas/estoque-baixo` |
 | CRUD | `/impressoras` | impressoras |
@@ -65,9 +65,13 @@ Todas as rotas (exceto `/auth/*` e `/health`) exigem header
 | GET | `/dashboard` | métricas agregadas (faturamento, custo médio, margem real vs. planejada, consumo/mês, por material, série mensal) |
 | CRUD | `/moedas` | moedas de exibição (EUR base protegida); taxas configuráveis. PDF aceita `?moeda=USD` |
 
-**Autorização:** escritas em `/materiais`, `/impressoras`, `/custos-*`,
-`/configuracao` e `/moedas` exigem papel `admin`; leituras e `/orcamentos`
-(trabalho operacional) são liberadas a `operador`.
+**Multi-tenant:** cada usuário tem seu próprio espaço de dados, isolado dos
+demais — materiais, impressoras, custos, configuração, moedas e orçamentos
+pertencem a quem os criou. Qualquer usuário autenticado tem acesso total
+(leitura e escrita) **apenas ao que é seu**; não há papel privilegiado sobre
+dados de outro usuário. Auto-cadastro é público (`POST /auth/registro`, sem
+token) — todo usuário começa com um espaço vazio, pronto para cadastrar seus
+próprios materiais/impressoras/custos.
 
 Regras de negócio cobertas por **testes de integração automatizados**
 (`src/http/api.test.ts`, supertest): **2** margem mínima bloqueia salvar (422) ·

@@ -19,8 +19,8 @@ const configSchema = z
 
 configuracaoRouter.get(
   '/',
-  asyncHandler(async (_req, res) => {
-    res.json(await obterConfiguracao());
+  asyncHandler(async (req, res) => {
+    res.json(await obterConfiguracao(req.usuario!.sub));
   }),
 );
 
@@ -28,8 +28,9 @@ configuracaoRouter.patch(
   '/',
   validarBody(configSchema),
   asyncHandler(async (req, res) => {
-    await obterConfiguracao(); // garante que a linha existe
-    const atualizada = await prisma.configuracao.update({ where: { id: 1 }, data: req.body });
+    const usuarioId = req.usuario!.sub;
+    await obterConfiguracao(usuarioId); // garante que a linha existe
+    const atualizada = await prisma.configuracao.update({ where: { usuarioId }, data: req.body });
     res.json(atualizada);
   }),
 );

@@ -12,9 +12,18 @@ model User {
   id         Int         @id @default(autoincrement())
   email      String      @unique
   senhaHash  String
-  role       String      @default("operador") // admin | operador
+  role       String      @default("operador") // admin | operador (nao usado mais p/ controle de dados)
   criadoEm   DateTime    @default(now())
   orcamentos Orcamento[]
+
+  // Multi-tenant: cada usuario e dono do seu proprio espaco de dados,
+  // isolado dos demais. Sem papel privilegiado sobre dados de outro usuario.
+  materiais       Material[]
+  impressoras     Impressora[]
+  custosFixos     CustoFixo[]
+  custosVariaveis CustoVariavel[]
+  moedas          Moeda[]
+  configuracao    Configuracao?
 }
 
 model Material {
@@ -30,6 +39,11 @@ model Material {
   ativo           Boolean     @default(true)
   criadoEm        DateTime    @default(now())
   orcamentos      Orcamento[]
+
+  usuarioId Int
+  usuario   User @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+
+  @@index([usuarioId])
 }
 
 model Impressora {
@@ -47,6 +61,11 @@ model Impressora {
   ativo                Boolean     @default(true)
   criadoEm             DateTime    @default(now())
   orcamentos           Orcamento[]
+
+  usuarioId Int
+  usuario   User @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+
+  @@index([usuarioId])
 }
 
 model CustoFixo {
@@ -54,6 +73,11 @@ model CustoFixo {
   nome        String
   valorMensal Float
   criadoEm    DateTime @default(now())
+
+  usuarioId Int
+  usuario   User @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+
+  @@index([usuarioId])
 }
 
 // Custos variaveis por peca (cola, alcool, embalagem, etiqueta, frete...).
@@ -64,29 +88,43 @@ model CustoVariavel {
   valorUnitario Float // custo por peca quando aplicado
   ativo         Boolean  @default(true)
   criadoEm      DateTime @default(now())
+
+  usuarioId Int
+  usuario   User @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+
+  @@index([usuarioId])
 }
 
-// Moedas para EXIBICAO. O calculo e sempre na moeda base EUR (fonte da verdade);
-// a moeda so converte valores mostrados. taxaParaBase = quanto vale 1 unidade em EUR.
+// Moedas para EXIBICAO, por usuario. O calculo e sempre na moeda base EUR
+// (fonte da verdade); a moeda so converte valores mostrados. taxaParaBase =
+// quanto vale 1 unidade em EUR.
 model Moeda {
-  codigo       String   @id // "EUR", "USD", "GBP"
-  nome         String
+  id     Int    @id @default(autoincrement())
+  codigo String // "EUR", "USD", "GBP" — unico POR usuario, nao globalmente
+  nome   String
   simbolo      String
   // @map preserva a coluna historica "taxaParaBRL" no banco (sem migracao de dados).
   taxaParaBase Float    @map("taxaParaBRL") // 1 unidade = X EUR; EUR = 1
   base         Boolean  @default(false) // EUR e a base, sempre taxa 1
   criadoEm     DateTime @default(now())
+
+  usuarioId Int
+  usuario   User @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+
+  @@unique([usuarioId, codigo])
 }
 
-// Parametros globais de precificacao (linha unica, id = 1).
+// Parametros globais de precificacao — uma linha por usuario.
 model Configuracao {
-  id                 Int   @id @default(1)
   precoKwh           Float @default(0.95)
   valorHoraTrabalho  Float @default(20)
   // Horas produtivas da impressora no mes: divisor do rateio de custo fixo
   // (custo fixo/hora = custosFixosMensais / horasProdutivasMes).
   horasProdutivasMes Float @default(160)
   margemMinima       Float @default(0.2)
+
+  usuarioId Int  @id
+  usuario   User @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
 }
 
 model Orcamento {
@@ -107,12 +145,14 @@ model Orcamento {
 
   materialId     Int
   impressoraId   Int
-  usuarioId      Int?
+  usuarioId      Int
   estoqueBaixado Boolean   @default(false)
   criadoEm       DateTime  @default(now())
   aprovadoEm     DateTime?
 
   material   Material   @relation(fields: [materialId], references: [id])
   impressora Impressora @relation(fields: [impressoraId], references: [id])
-  usuario    User?      @relation(fields: [usuarioId], references: [id])
+  usuario    User       @relation(fields: [usuarioId], references: [id])
+
+  @@index([usuarioId])
 }
