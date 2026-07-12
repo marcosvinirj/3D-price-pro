@@ -91,8 +91,22 @@ export interface DetalhamentoCustos {
   custoComFalha: number;
 }
 
+/** Detalhamento de custo de UMA peca dentro de um orcamento multi-peca. */
+export interface DetalhamentoItemCusto {
+  nome?: string;
+  pesoG: number;
+  custoMaterial: number;
+  custoEnergia: number;
+  depreciacao: number;
+  maoDeObra: number;
+  custoFixoRateado: number;
+  custoItemTotal: number;
+}
+
 export interface ResultadoPrecificacao {
   custos: DetalhamentoCustos;
+  /** Detalhamento por peca (orcamentos multi-peca). */
+  itens: DetalhamentoItemCusto[];
   precoBruto: number;
   precoFinal: number;
   precoCobrado: number;
@@ -109,16 +123,24 @@ export interface ResultadoPrecificacao {
 
 export interface RespostaSimulacao {
   resultado: ResultadoPrecificacao;
-  consumoG: number;
+  /** Consumo/estoque por peca (mesma ordem dos itens enviados). */
+  itens: { materialId: number; consumoG: number; estoqueSuficiente: boolean }[];
   estoqueSuficiente: boolean;
 }
 
 export type ModoArredondamento = 'nenhum' | 'maisProximo' | 'paraCima' | 'psicologico';
 
-export interface OrcamentoInput {
+export interface OrcamentoItemInput {
+  nome?: string;
   materialId: number;
+  pesoG: number;
+  tempoImpressaoH: number;
+  tempoPosProcessamentoH: number;
+}
+
+export interface OrcamentoInput {
   impressoraId: number;
-  peca: { pesoG: number; tempoImpressaoH: number; tempoPosProcessamentoH: number };
+  itens: OrcamentoItemInput[];
   parametros: { taxaFalha: number; margemLucro: number };
   custosVariaveisIds?: number[];
   desconto?: { tipo: 'percentual' | 'valor'; valor: number };
@@ -130,4 +152,32 @@ export interface OrcamentoInput {
   cliente?: string;
   telefone?: string;
   descricaoPeca?: string;
+}
+
+/** Uma peca de um orcamento ja salvo (como devolvido pela API). */
+export interface OrcamentoItemSalvo {
+  id: number;
+  nome: string | null;
+  pesoG: number;
+  tempoImpressaoH: number;
+  tempoPosProcessamentoH: number;
+  consumoG: number;
+  custoItem: number;
+  materialId: number;
+  material: { nome: string; cor: string | null; tipo?: string };
+}
+
+/** Orcamento completo, como devolvido por GET /orcamentos/:id. */
+export interface OrcamentoDetalhado {
+  id: number;
+  cliente: string | null;
+  telefone: string | null;
+  descricaoPeca: string | null;
+  status: 'pendente' | 'aprovado' | 'recusado';
+  precoFinal: number;
+  precoCobrado: number;
+  impressoraId: number;
+  impressora: { id: number; nome: string };
+  itens: OrcamentoItemSalvo[];
+  resultado: ResultadoPrecificacao;
 }

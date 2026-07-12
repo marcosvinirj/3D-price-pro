@@ -5,10 +5,6 @@
 import { prisma } from '../../db/prisma.js';
 import type { ResultadoPrecificacao } from '../../pricing/index.js';
 
-interface EntradaSnapshot {
-  material: { taxaDesperdicio: number };
-}
-
 const media = (ns: number[]) => (ns.length ? ns.reduce((s, n) => s + n, 0) / ns.length : 0);
 
 /** Chave "AAAA-MM" e rotulo curto de um mes. */
@@ -20,7 +16,7 @@ export async function obterMetricas(usuarioId: number) {
   const orcamentos = await prisma.orcamento.findMany({
     where: { usuarioId },
     include: {
-      material: { select: { nome: true } },
+      itens: { include: { material: { select: { nome: true } } } },
       impressora: { select: { nome: true } },
     },
     orderBy: { criadoEm: 'asc' },
@@ -32,12 +28,11 @@ export async function obterMetricas(usuarioId: number) {
   const parsed = orcamentos.map((o) => ({
     o,
     resultado: JSON.parse(o.resultadoJson) as ResultadoPrecificacao,
-    entrada: JSON.parse(o.entradaJson) as EntradaSnapshot,
   }));
   const parsedAprovados = parsed.filter((p) => p.o.status === 'aprovado');
 
-  const consumoDe = (p: (typeof parsed)[number]) =>
-    p.o.pesoG * (1 + p.entrada.material.taxaDesperdicio);
+  // Consumo total do orcamento = soma do consumoG (ja com desperdicio) de cada peca.
+  const consumoDe = (p: (typeof parsed)[number]) => p.o.itens.reduce((s, it) => s + it.consumoG, 0);
 
   // Consumo do mes corrente (apenas aprovados, pela data de aprovacao).
   const agora = new Date();
@@ -46,11 +41,12 @@ export async function obterMetricas(usuarioId: number) {
     .filter((p) => p.o.aprovadoEm && chaveMes(new Date(p.o.aprovadoEm)) === mesAtual)
     .reduce((s, p) => s + consumoDe(p), 0);
 
-  // Consumo por material (aprovados).
+  // Consumo por material (aprovados) — cada peca contribui pro seu proprio material.
   const porMaterial = new Map<string, number>();
   for (const p of parsedAprovados) {
-    const nome = p.o.material.nome;
-    porMaterial.set(nome, (porMaterial.get(nome) ?? 0) + consumoDe(p));
+    for (const it of p.o.itens) {
+      porMaterial.set(it.material.nome, (porMaterial.get(it.material.nome) ?? 0) + it.consumoG);
+    }
   }
   const consumoPorMaterial = [...porMaterial.entries()]
     .map(([material, gramas]) => ({ material, gramas: Math.round(gramas * 10) / 10 }))

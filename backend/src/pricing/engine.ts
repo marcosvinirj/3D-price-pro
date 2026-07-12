@@ -19,11 +19,14 @@
  *   Preco Cobrado      = Preco Final - desconto (desconto so sobre o final)
  */
 import { z } from 'zod';
-import { arredondarN, aplicarArredondamento } from './money.js';
+import { arredondarN, aplicarArredondamento, type EstrategiaArredondamento } from './money.js';
 import {
   entradaPrecificacaoSchema,
+  entradaPrecificacaoMultiplaSchema,
   type EntradaPrecificacao,
   type EntradaPrecificacaoInput,
+  type EntradaPrecificacaoMultipla,
+  type EntradaPrecificacaoMultiplaInput,
 } from './schema.js';
 
 /** Detalhamento de cada componente de custo (valores brutos, sem arredondar). */
@@ -96,57 +99,75 @@ export class ErroValidacaoPrecificacao extends Error {
   }
 }
 
+/** Os 5 componentes de custo LINEARES de uma peca (sem markup, sem arredondar). */
+interface ComponentesCustoPeca {
+  custoMaterial: number;
+  custoEnergia: number;
+  depreciacao: number;
+  maoDeObra: number;
+  custoFixoRateado: number;
+}
+
+type PecaEntrada = EntradaPrecificacao['peca'];
+type MaterialEntrada = EntradaPrecificacao['material'];
+type ImpressoraEntrada = EntradaPrecificacao['impressora'];
+type CustosEntrada = EntradaPrecificacao['custos'];
+type ParametrosEntrada = EntradaPrecificacao['parametros'];
+
 /**
- * Calcula a precificacao a partir de uma entrada JA VALIDADA.
- * Use `precificar` para validar e calcular em um passo so.
+ * Calcula os 5 componentes de custo de UMA peca. Todos sao funcoes lineares
+ * dos dados de entrada — por isso somar os componentes de varias pecas e
+ * so' entao aplicar taxaFalha/margemLucro (uma vez) da o mesmo resultado que
+ * aplicar por peca e somar depois. E' o que permite `calcularMultiplo`
+ * reaproveitar esta funcao sem duplicar a matematica.
  */
-export function calcular(entrada: EntradaPrecificacao): ResultadoPrecificacao {
-  const { peca, material, impressora, custos, parametros } = entrada;
-
-  const custoMaterial =
-    ((peca.pesoG * material.precoKg) / 1000) * (1 + material.taxaDesperdicio);
-
-  const custoEnergia =
-    (impressora.potenciaW / 1000) * peca.tempoImpressaoH * custos.precoKwh;
-
-  const depreciacao =
-    (impressora.valorAquisicao / impressora.vidaUtilH) * peca.tempoImpressaoH;
-
+function calcularComponentesPeca(
+  peca: PecaEntrada,
+  material: MaterialEntrada,
+  impressora: ImpressoraEntrada,
+  custos: Pick<CustosEntrada, 'precoKwh' | 'valorHoraTrabalho' | 'custosFixosMensais' | 'horasProdutivasMes'>,
+): ComponentesCustoPeca {
+  const custoMaterial = ((peca.pesoG * material.precoKg) / 1000) * (1 + material.taxaDesperdicio);
+  const custoEnergia = (impressora.potenciaW / 1000) * peca.tempoImpressaoH * custos.precoKwh;
+  const depreciacao = (impressora.valorAquisicao / impressora.vidaUtilH) * peca.tempoImpressaoH;
   const maoDeObra = peca.tempoPosProcessamentoH * custos.valorHoraTrabalho;
-
   // Rateio profissional: custos fixos por HORA produtiva da impressora,
   // multiplicado pelo tempo de impressao da peca (nao por peca/mes).
   const custoFixoPorHora = custos.custosFixosMensais / custos.horasProdutivasMes;
   const custoFixoRateado = custoFixoPorHora * peca.tempoImpressaoH;
 
-  // Custos variaveis por peca (soma dos itens selecionados no orcamento).
-  const custoVariavel = custos.custoVariavel;
+  return { custoMaterial, custoEnergia, depreciacao, maoDeObra, custoFixoRateado };
+}
 
-  const custoTotal =
-    custoMaterial +
-    custoEnergia +
-    depreciacao +
-    maoDeObra +
-    custoFixoRateado +
-    custoVariavel;
-
+/**
+ * Parte final do calculo: recebe um custo total ja somado (de uma ou varias
+ * pecas) e aplica provisao de falha, margem, arredondamento, desconto e
+ * detalhamento de margem. Compartilhada por `calcular` e `calcularMultiplo`.
+ */
+function finalizarPreco(
+  custoTotal: number,
+  custoVariavel: number,
+  parametros: ParametrosEntrada,
+  desconto: EntradaPrecificacao['desconto'],
+  arredondamento: EstrategiaArredondamento,
+): Omit<ResultadoPrecificacao, 'custos'> & { custoComFalha: number } {
   const custoComFalha = custoTotal * (1 + parametros.taxaFalha);
   const precoBruto = custoComFalha * (1 + parametros.margemLucro);
-  const precoFinal = aplicarArredondamento(precoBruto, entrada.arredondamento);
+  const precoFinal = aplicarArredondamento(precoBruto, arredondamento);
 
   // Desconto incide APENAS sobre o preco final, nunca sobre os custos (regra 7).
-  let desconto: DetalhamentoDesconto | null = null;
+  let desconto_: DetalhamentoDesconto | null = null;
   let precoCobrado = precoFinal;
-  if (entrada.desconto) {
+  if (desconto) {
     const valorDescontadoBruto =
-      entrada.desconto.tipo === 'percentual'
-        ? precoFinal * entrada.desconto.valor
-        : Math.min(entrada.desconto.valor, precoFinal); // nunca deixa preco negativo
+      desconto.tipo === 'percentual'
+        ? precoFinal * desconto.valor
+        : Math.min(desconto.valor, precoFinal); // nunca deixa preco negativo
     // Arredonda o desconto primeiro para que preco + desconto batam ao centavo.
     const valorDescontado = arredondarN(valorDescontadoBruto, 2);
     precoCobrado = arredondarN(precoFinal - valorDescontado, 2);
-    desconto = {
-      tipo: entrada.desconto.tipo,
+    desconto_ = {
+      tipo: desconto.tipo,
       valorDescontado,
       precoComDesconto: precoCobrado,
     };
@@ -158,26 +179,14 @@ export function calcular(entrada: EntradaPrecificacao): ResultadoPrecificacao {
 
   // Margem do preco de tabela (antes do desconto) — usada para a regra 2,
   // pois o arredondamento pode ter reduzido a margem planejada.
-  const margemAposArredondamento =
-    custoComFalha > 0 ? precoFinal / custoComFalha - 1 : 0;
-  const atingeMinima =
-    margemAposArredondamento >= parametros.margemMinima - 1e-9;
+  const margemAposArredondamento = custoComFalha > 0 ? precoFinal / custoComFalha - 1 : 0;
+  const atingeMinima = margemAposArredondamento >= parametros.margemMinima - 1e-9;
 
   return {
-    custos: {
-      custoMaterial: arredondarN(custoMaterial, 4),
-      custoEnergia: arredondarN(custoEnergia, 4),
-      depreciacao: arredondarN(depreciacao, 4),
-      maoDeObra: arredondarN(maoDeObra, 4),
-      custoFixoRateado: arredondarN(custoFixoRateado, 4),
-      custoVariavel: arredondarN(custoVariavel, 4),
-      custoTotal: arredondarN(custoTotal, 4),
-      custoComFalha: arredondarN(custoComFalha, 4),
-    },
     precoBruto: arredondarN(precoBruto, 4),
     precoFinal,
     precoCobrado,
-    desconto,
+    desconto: desconto_,
     margem: {
       planejada: parametros.margemLucro,
       minima: parametros.margemMinima,
@@ -185,6 +194,41 @@ export function calcular(entrada: EntradaPrecificacao): ResultadoPrecificacao {
       aposArredondamento: arredondarN(margemAposArredondamento, 4),
       atingeMinima,
       lucro: arredondarN(lucro, 2),
+    },
+    custoComFalha: arredondarN(custoComFalha, 4),
+  };
+}
+
+/**
+ * Calcula a precificacao a partir de uma entrada JA VALIDADA.
+ * Use `precificar` para validar e calcular em um passo so.
+ */
+export function calcular(entrada: EntradaPrecificacao): ResultadoPrecificacao {
+  const { peca, material, impressora, custos, parametros } = entrada;
+  const c = calcularComponentesPeca(peca, material, impressora, custos);
+  const custoVariavel = custos.custoVariavel;
+  const custoTotal =
+    c.custoMaterial + c.custoEnergia + c.depreciacao + c.maoDeObra + c.custoFixoRateado + custoVariavel;
+
+  const { custoComFalha, ...resto } = finalizarPreco(
+    custoTotal,
+    custoVariavel,
+    parametros,
+    entrada.desconto,
+    entrada.arredondamento,
+  );
+
+  return {
+    ...resto,
+    custos: {
+      custoMaterial: arredondarN(c.custoMaterial, 4),
+      custoEnergia: arredondarN(c.custoEnergia, 4),
+      depreciacao: arredondarN(c.depreciacao, 4),
+      maoDeObra: arredondarN(c.maoDeObra, 4),
+      custoFixoRateado: arredondarN(c.custoFixoRateado, 4),
+      custoVariavel: arredondarN(custoVariavel, 4),
+      custoTotal: arredondarN(custoTotal, 4),
+      custoComFalha,
     },
   };
 }
@@ -205,4 +249,92 @@ export function precificar(
     );
   }
   return calcular(parsed.data);
+}
+
+/** Detalhamento de custo de UMA peca dentro de um orcamento multi-peca. */
+export interface DetalhamentoItemCusto {
+  nome?: string;
+  pesoG: number;
+  custoMaterial: number;
+  custoEnergia: number;
+  depreciacao: number;
+  maoDeObra: number;
+  custoFixoRateado: number;
+  /** Soma dos 5 componentes acima (sem custo variavel, sem markup). */
+  custoItemTotal: number;
+}
+
+/** Resultado de um orcamento com multiplas pecas — mesmo formato agregado de sempre, mais o detalhamento por peca. */
+export interface ResultadoPrecificacaoMultipla extends ResultadoPrecificacao {
+  itens: DetalhamentoItemCusto[];
+}
+
+/**
+ * Calcula a precificacao de um orcamento com VARIAS pecas (cada uma com seu
+ * proprio material), compartilhando impressora/custos/parametros. Soma os
+ * componentes lineares de cada peca e aplica a provisao de falha/margem uma
+ * unica vez sobre o total — matematicamente equivalente a aplicar por peca e
+ * somar depois (ver `calcularComponentesPeca`).
+ */
+export function calcularMultiplo(entrada: EntradaPrecificacaoMultipla): ResultadoPrecificacaoMultipla {
+  const itens: DetalhamentoItemCusto[] = entrada.itens.map((it) => {
+    const c = calcularComponentesPeca(it.peca, it.material, entrada.impressora, entrada.custos);
+    const custoItemTotal = c.custoMaterial + c.custoEnergia + c.depreciacao + c.maoDeObra + c.custoFixoRateado;
+    return {
+      ...(it.nome ? { nome: it.nome } : {}),
+      pesoG: it.peca.pesoG,
+      custoMaterial: arredondarN(c.custoMaterial, 4),
+      custoEnergia: arredondarN(c.custoEnergia, 4),
+      depreciacao: arredondarN(c.depreciacao, 4),
+      maoDeObra: arredondarN(c.maoDeObra, 4),
+      custoFixoRateado: arredondarN(c.custoFixoRateado, 4),
+      custoItemTotal: arredondarN(custoItemTotal, 4),
+    };
+  });
+
+  const custoVariavel = entrada.custos.custoVariavel;
+  // Soma os totais JA arredondados de cada peca — o que e' exibido por peca
+  // sempre bate com o que entra na soma (por isso o resultado nao e'
+  // bit-a-bit identico a `calcular` para o "mesmo" input de peca unica,
+  // ainda que a diferenca seja sub-centavo e irrelevante na pratica).
+  const somaItens = itens.reduce((s, i) => s + i.custoItemTotal, 0);
+  const custoTotal = somaItens + custoVariavel;
+
+  const { custoComFalha, ...resto } = finalizarPreco(
+    custoTotal,
+    custoVariavel,
+    entrada.parametros,
+    entrada.desconto,
+    entrada.arredondamento,
+  );
+
+  const custosAgregados: DetalhamentoCustos = {
+    custoMaterial: arredondarN(itens.reduce((s, i) => s + i.custoMaterial, 0), 4),
+    custoEnergia: arredondarN(itens.reduce((s, i) => s + i.custoEnergia, 0), 4),
+    depreciacao: arredondarN(itens.reduce((s, i) => s + i.depreciacao, 0), 4),
+    maoDeObra: arredondarN(itens.reduce((s, i) => s + i.maoDeObra, 0), 4),
+    custoFixoRateado: arredondarN(itens.reduce((s, i) => s + i.custoFixoRateado, 0), 4),
+    custoVariavel: arredondarN(custoVariavel, 4),
+    custoTotal: arredondarN(custoTotal, 4),
+    custoComFalha,
+  };
+
+  return { ...resto, custos: custosAgregados, itens };
+}
+
+/**
+ * Valida a entrada crua (multiplas pecas) e calcula a precificacao.
+ * Lanca `ErroValidacaoPrecificacao` se a entrada for invalida.
+ */
+export function precificarMultiplo(
+  entrada: EntradaPrecificacaoMultiplaInput,
+): ResultadoPrecificacaoMultipla {
+  const parsed = entradaPrecificacaoMultiplaSchema.safeParse(entrada);
+  if (!parsed.success) {
+    throw new ErroValidacaoPrecificacao(
+      'Entrada de precificacao invalida',
+      parsed.error.issues,
+    );
+  }
+  return calcularMultiplo(parsed.data);
 }

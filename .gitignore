@@ -13,3 +13,6 @@ backend/prisma/dev.db-journal
 
 # Config local do Claude Code (especifico da maquina)
 .claude/
+
+# Config local do editor
+.vscode/

@@ -8,19 +8,19 @@
 import { z } from 'zod';
 
 /** Numero finito e >= 0. */
-const naoNegativo = z
+export const naoNegativo = z
   .number({ invalid_type_error: 'Deve ser um numero' })
   .finite('Deve ser um numero finito')
   .nonnegative('Nao pode ser negativo');
 
 /** Numero finito e > 0 (para divisores). */
-const positivo = z
+export const positivo = z
   .number({ invalid_type_error: 'Deve ser um numero' })
   .finite('Deve ser um numero finito')
   .positive('Deve ser maior que zero');
 
 /** Fracao entre 0 e 1 (ex.: 0.20 = 20%). Para taxas limitadas a 100%. */
-const fracao = z
+export const fracao = z
   .number({ invalid_type_error: 'Deve ser um numero' })
   .finite()
   .min(0, 'Percentual nao pode ser negativo')
@@ -30,7 +30,7 @@ const fracao = z
  * Fracao sem teto de 100% (ex.: margem de lucro pode passar de 1 = 100%).
  * Limitada a um teto sanitario para pegar erros grosseiros de digitacao.
  */
-const fracaoAberta = z
+export const fracaoAberta = z
   .number({ invalid_type_error: 'Deve ser um numero' })
   .finite()
   .min(0, 'Percentual nao pode ser negativo')
@@ -106,3 +106,62 @@ export type EntradaPrecificacao = z.infer<typeof entradaPrecificacaoSchema>;
 
 /** Entrada crua aceita pelo usuario (antes dos defaults). */
 export type EntradaPrecificacaoInput = z.input<typeof entradaPrecificacaoSchema>;
+
+/** Uma peca dentro de um orcamento multi-peca (ex.: "Cauda", "Torso"...). */
+const itemPrecificacaoSchema = z.object({
+  nome: z.string().trim().min(1).optional(),
+  peca: z.object({
+    pesoG: positivo,
+    tempoImpressaoH: naoNegativo,
+    tempoPosProcessamentoH: naoNegativo,
+  }),
+  material: z.object({
+    precoKg: naoNegativo,
+    taxaDesperdicio: fracao,
+  }),
+});
+
+/**
+ * Entrada de um orcamento com MULTIPLAS pecas, cada uma com seu proprio
+ * material. Impressora, custos e parametros sao compartilhados por todas as
+ * pecas do orcamento (mesma impressora, mesmo lote de custos fixos/variaveis).
+ */
+export const entradaPrecificacaoMultiplaSchema = z
+  .object({
+    itens: z.array(itemPrecificacaoSchema).min(1, 'Pelo menos uma peca e obrigatoria'),
+    impressora: z.object({
+      potenciaW: naoNegativo,
+      valorAquisicao: naoNegativo,
+      vidaUtilH: positivo,
+    }),
+    custos: z.object({
+      precoKwh: naoNegativo,
+      valorHoraTrabalho: naoNegativo,
+      custosFixosMensais: naoNegativo,
+      horasProdutivasMes: positivo,
+      custoVariavel: naoNegativo.default(0),
+    }),
+    parametros: z.object({
+      taxaFalha: fracao,
+      margemLucro: fracaoAberta,
+      margemMinima: fracaoAberta.default(0.2),
+    }),
+    desconto: descontoSchema.optional(),
+    arredondamento: arredondamentoSchema.default({ modo: 'nenhum' }),
+  })
+  .superRefine((dados, ctx) => {
+    if (dados.parametros.margemLucro < dados.parametros.margemMinima) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['parametros', 'margemLucro'],
+        message: `Margem de lucro (${(dados.parametros.margemLucro * 100).toFixed(
+          1,
+        )}%) abaixo da margem minima permitida (${(
+          dados.parametros.margemMinima * 100
+        ).toFixed(1)}%).`,
+      });
+    }
+  });
+
+export type EntradaPrecificacaoMultipla = z.infer<typeof entradaPrecificacaoMultiplaSchema>;
+export type EntradaPrecificacaoMultiplaInput = z.input<typeof entradaPrecificacaoMultiplaSchema>;

@@ -37,7 +37,7 @@ export async function gerarPdfOrcamento(
 ): Promise<Uint8Array> {
   const orc = await prisma.orcamento.findUnique({
     where: { id },
-    include: { material: true, impressora: true },
+    include: { itens: { include: { material: true }, orderBy: { ordem: 'asc' } }, impressora: true },
   });
   if (!orc) throw naoEncontrado('Orcamento');
 
@@ -84,11 +84,17 @@ export async function gerarPdfOrcamento(
   texto(orc.descricaoPeca || '—', width / 2, y - 14, { fonte: bold, tamanho: 12 });
   y -= 42;
 
-  texto(`Material: ${orc.material.nome} (${orc.material.tipo})`, margem, y, { cor: SUAVE });
-  texto(`Impressora: ${orc.impressora.nome}`, width / 2, y, { cor: SUAVE });
-  y -= 16;
-  texto(`Peso da peça: ${orc.pesoG.toLocaleString('pt-BR')} g`, margem, y, { cor: SUAVE });
-  y -= 26;
+  texto(`Impressora: ${orc.impressora.nome}`, margem, y, { cor: SUAVE });
+  y -= 18;
+
+  // Lista das pecas do orcamento (podem usar materiais/cores diferentes).
+  for (const it of orc.itens) {
+    const cor = it.material.cor ? ` ${it.material.cor}` : '';
+    const linhaItem = `${it.nome ?? 'Peça'} — ${it.material.nome}${cor} (${it.material.tipo}) — ${it.pesoG.toLocaleString('pt-BR')} g`;
+    texto(linhaItem, margem, y, { tamanho: 10, cor: SUAVE });
+    y -= 15;
+  }
+  y -= 10;
 
   // Tabela de valores
   linha(y);
@@ -104,7 +110,8 @@ export async function gerarPdfOrcamento(
     y -= forte ? 24 : 18;
   };
 
-  itemValor(`Impressão da peça — ${orc.material.nome}`, fmt(resultado.precoFinal));
+  const rotuloPecas = orc.itens.length === 1 ? '1 peça' : `${orc.itens.length} peças`;
+  itemValor(`Impressão (${rotuloPecas})`, fmt(resultado.precoFinal));
   if (resultado.desconto && resultado.desconto.valorDescontado > 0) {
     itemValor('Desconto', `- ${fmt(resultado.desconto.valorDescontado)}`);
   }

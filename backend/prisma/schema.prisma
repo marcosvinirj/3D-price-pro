@@ -38,7 +38,7 @@ model Material {
   taxaDesperdicio Float       @default(0.05) // fracao (0.05 = 5%)
   ativo           Boolean     @default(true)
   criadoEm        DateTime    @default(now())
-  orcamentos      Orcamento[]
+  itens           OrcamentoItem[]
 
   usuarioId Int
   usuario   User @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
@@ -135,24 +135,46 @@ model Orcamento {
   status        String   @default("pendente") // pendente | aprovado | recusado
 
   // Snapshots imutaveis (regras 5 e 6): guardam entrada e resultado no momento
-  // da emissao. Reajuste de material/config nao altera orcamentos ja emitidos.
+  // da emissao. Reajuste (ou edicao, enquanto pendente) gera um novo snapshot;
+  // orcamentos ja aprovados nunca sao alterados.
   entradaJson   String
   resultadoJson String
 
   precoFinal   Float
   precoCobrado Float
-  pesoG        Float
 
-  materialId     Int
   impressoraId   Int
   usuarioId      Int
   estoqueBaixado Boolean   @default(false)
   criadoEm       DateTime  @default(now())
   aprovadoEm     DateTime?
 
-  material   Material   @relation(fields: [materialId], references: [id])
-  impressora Impressora @relation(fields: [impressoraId], references: [id])
-  usuario    User       @relation(fields: [usuarioId], references: [id])
+  itens      OrcamentoItem[]
+  impressora Impressora      @relation(fields: [impressoraId], references: [id])
+  usuario    User            @relation(fields: [usuarioId], references: [id])
 
   @@index([usuarioId])
+}
+
+// Uma peca dentro de um orcamento (ex.: "Cauda", "Torso" de um modelo
+// impresso em varias partes). Cada peca pode usar um material/cor proprio.
+model OrcamentoItem {
+  id                     Int    @id @default(autoincrement())
+  nome                   String?
+  pesoG                  Float
+  tempoImpressaoH        Float
+  tempoPosProcessamentoH Float
+  // Snapshots calculados na criacao/edicao (regra 6): nao mudam se o
+  // material for reajustado depois.
+  consumoG               Float // pesoG * (1 + taxaDesperdicio) no momento do calculo
+  custoItem              Float // custo desta peca (sem markup), para exibicao
+  ordem                  Int    @default(0)
+
+  orcamentoId Int
+  orcamento   Orcamento @relation(fields: [orcamentoId], references: [id], onDelete: Cascade)
+  materialId  Int
+  material    Material  @relation(fields: [materialId], references: [id])
+
+  @@index([orcamentoId])
+  @@index([materialId])
 }

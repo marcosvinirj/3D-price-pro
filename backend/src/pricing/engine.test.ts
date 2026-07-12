@@ -1,8 +1,10 @@
 import { describe, it, expect } from 'vitest';
 import {
   precificar,
+  precificarMultiplo,
   ErroValidacaoPrecificacao,
   type EntradaPrecificacaoInput,
+  type EntradaPrecificacaoMultiplaInput,
 } from './index.js';
 
 /**
@@ -248,5 +250,88 @@ describe('validacao de entrada', () => {
       expect(e).toBeInstanceOf(ErroValidacaoPrecificacao);
       expect((e as ErroValidacaoPrecificacao).issues.length).toBeGreaterThan(0);
     }
+  });
+});
+
+/** Uma peca com a mesma economia da `entradaBase` de cima (custoTotal = 31.06). */
+function pecaBase(nome?: string) {
+  return {
+    ...(nome ? { nome } : {}),
+    peca: { pesoG: 50, tempoImpressaoH: 4, tempoPosProcessamentoH: 0.5 },
+    material: { precoKg: 120, taxaDesperdicio: 0.05 },
+  };
+}
+
+function entradaMultiplaBase(
+  over: Partial<EntradaPrecificacaoMultiplaInput> = {},
+): EntradaPrecificacaoMultiplaInput {
+  return {
+    itens: [pecaBase()],
+    impressora: { potenciaW: 200, valorAquisicao: 2000, vidaUtilH: 2000 },
+    custos: { precoKwh: 0.95, valorHoraTrabalho: 20, custosFixosMensais: 1000, horasProdutivasMes: 400 },
+    parametros: { taxaFalha: 0.1, margemLucro: 0.5, margemMinima: 0.2 },
+    ...over,
+  };
+}
+
+describe('calcularMultiplo (orcamento com varias pecas)', () => {
+  it('com 1 peca, bate exatamente com calcular() para a mesma entrada', () => {
+    const r = precificarMultiplo(entradaMultiplaBase());
+    expect(r.custos.custoTotal).toBeCloseTo(31.06, 4);
+    expect(r.precoBruto).toBeCloseTo(51.249, 4);
+    expect(r.itens).toHaveLength(1);
+    expect(r.itens[0]!.custoItemTotal).toBeCloseTo(31.06, 4);
+  });
+
+  it('soma os componentes lineares de varias pecas antes de aplicar falha/margem', () => {
+    // 2 pecas identicas a entradaBase => todo componente linear dobra.
+    const r = precificarMultiplo(entradaMultiplaBase({ itens: [pecaBase('Cauda'), pecaBase('Torso')] }));
+    expect(r.custos.custoMaterial).toBeCloseTo(6.3 * 2, 4);
+    expect(r.custos.custoTotal).toBeCloseTo(31.06 * 2, 4);
+    // falha/margem aplicadas UMA vez sobre o total agregado, nao por peca.
+    expect(r.custos.custoComFalha).toBeCloseTo(31.06 * 2 * 1.1, 4);
+    expect(r.precoBruto).toBeCloseTo(31.06 * 2 * 1.1 * 1.5, 4);
+    expect(r.itens.map((i) => i.nome)).toEqual(['Cauda', 'Torso']);
+  });
+
+  it('custo variavel entra uma vez no agregado, nao por peca', () => {
+    const umaPeca = precificarMultiplo(
+      entradaMultiplaBase({
+        custos: { precoKwh: 0.95, valorHoraTrabalho: 20, custosFixosMensais: 1000, horasProdutivasMes: 400, custoVariavel: 5 },
+      }),
+    );
+    const duasPecas = precificarMultiplo(
+      entradaMultiplaBase({
+        itens: [pecaBase(), pecaBase()],
+        custos: { precoKwh: 0.95, valorHoraTrabalho: 20, custosFixosMensais: 1000, horasProdutivasMes: 400, custoVariavel: 5 },
+      }),
+    );
+    expect(umaPeca.custos.custoVariavel).toBeCloseTo(5, 4);
+    expect(duasPecas.custos.custoVariavel).toBeCloseTo(5, 4); // nao 10
+    // a diferenca entre 2 pecas e 1 peca e' exatamente o custo linear da 2a peca.
+    expect(duasPecas.custos.custoTotal - umaPeca.custos.custoTotal).toBeCloseTo(31.06, 4);
+  });
+
+  it('margem minima bloqueia no agregado (regra 2)', () => {
+    expect(() =>
+      precificarMultiplo(
+        entradaMultiplaBase({ parametros: { taxaFalha: 0.1, margemLucro: 0.1, margemMinima: 0.2 } }),
+      ),
+    ).toThrow(ErroValidacaoPrecificacao);
+  });
+
+  it('desconto aplica uma vez sobre o preco final agregado', () => {
+    const r = precificarMultiplo(
+      entradaMultiplaBase({
+        itens: [pecaBase(), pecaBase()],
+        desconto: { tipo: 'percentual', valor: 0.1 },
+      }),
+    );
+    expect(r.desconto).not.toBeNull();
+    expect(r.precoCobrado + r.desconto!.valorDescontado).toBeCloseTo(r.precoFinal, 2);
+  });
+
+  it('rejeita orcamento sem nenhuma peca', () => {
+    expect(() => precificarMultiplo(entradaMultiplaBase({ itens: [] }))).toThrow(ErroValidacaoPrecificacao);
   });
 });

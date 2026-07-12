@@ -7,6 +7,7 @@ import {
   orcamentoInputSchema,
   simular,
   criarOrcamento,
+  editarOrcamento,
   aprovarOrcamento,
   recusarOrcamento,
   listarOrcamentos,
@@ -14,6 +15,11 @@ import {
 } from './service.js';
 import { gerarPdfOrcamento, nomeArquivoPdf } from './pdf.js';
 import { obterMoedaOuBase } from '../moedas/service.js';
+
+/** Junta o nome+cor dos materiais das pecas de um orcamento (p/ CSV/XLSX). */
+function materiaisResumo(o: { itens: { material: { nome: string; cor: string | null } }[] }): string {
+  return o.itens.map((i) => i.material.nome + (i.material.cor ? ` (${i.material.cor})` : '')).join(' + ');
+}
 
 /** Escapa um campo para CSV (aspas duplas + envolve se tiver separador). */
 function campoCsv(v: unknown): string {
@@ -58,6 +64,15 @@ orcamentosRouter.post(
   }),
 );
 
+/** Edita um orcamento PENDENTE (recalcula tudo; aprovado/recusado sao imutaveis). */
+orcamentosRouter.patch(
+  '/:id',
+  validarBody(orcamentoInputSchema),
+  asyncHandler(async (req, res) => {
+    res.json(await editarOrcamento(obterId(req), req.body, req.usuario!.sub));
+  }),
+);
+
 const filtroSchema = z.object({
   status: z.enum(['pendente', 'aprovado', 'recusado']).optional(),
 });
@@ -80,9 +95,10 @@ orcamentosRouter.get(
       'criadoEm',
       'cliente',
       'peca',
-      'material',
+      'pecas',
+      'materiais',
       'impressora',
-      'pesoG',
+      'pesoTotalG',
       'precoFinal',
       'precoCobrado',
       'status',
@@ -93,9 +109,10 @@ orcamentosRouter.get(
         new Date(o.criadoEm).toISOString(),
         o.cliente ?? '',
         o.descricaoPeca ?? '',
-        o.material.nome,
+        o.itens.length,
+        materiaisResumo(o),
         o.impressora.nome,
-        o.pesoG,
+        o.itens.reduce((s, i) => s + i.pesoG, 0),
         o.precoFinal,
         o.precoCobrado,
         o.status,
@@ -120,9 +137,10 @@ orcamentosRouter.get(
       'criadoEm',
       'cliente',
       'peca',
-      'material',
+      'pecas',
+      'materiais',
       'impressora',
-      'pesoG',
+      'pesoTotalG',
       'precoFinal',
       'precoCobrado',
       'status',
@@ -135,9 +153,10 @@ orcamentosRouter.get(
           new Date(o.criadoEm).toISOString().slice(0, 10),
           o.cliente ?? '',
           o.descricaoPeca ?? '',
-          o.material.nome,
+          o.itens.length,
+          materiaisResumo(o),
           o.impressora.nome,
-          o.pesoG,
+          o.itens.reduce((s, i) => s + i.pesoG, 0),
           o.precoFinal,
           o.precoCobrado,
           o.status,

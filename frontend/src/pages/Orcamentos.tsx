@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { api, ApiError } from '../lib/api';
 import { Alerta, Button, Card } from '../components/ui';
 import { useMoeda } from '../lib/moeda';
@@ -12,8 +13,15 @@ interface OrcamentoLista {
   precoFinal: number;
   precoCobrado: number;
   criadoEm: string;
-  material: { nome: string };
+  itens: { nome: string | null; material: { nome: string; cor: string | null } }[];
   impressora: { nome: string };
+}
+
+/** Resumo compacto dos materiais de um orcamento, para a coluna da tabela. */
+function resumoMateriais(o: OrcamentoLista): string {
+  if (o.itens.length === 0) return '—';
+  const primeiro = o.itens[0]!.material.nome;
+  return o.itens.length === 1 ? primeiro : `${primeiro} +${o.itens.length - 1}`;
 }
 
 const badge: Record<string, string> = {
@@ -24,6 +32,7 @@ const badge: Record<string, string> = {
 
 export function OrcamentosPage() {
   const { fmt, codigoAtual } = useMoeda();
+  const navegar = useNavigate();
   const [itens, setItens] = useState<OrcamentoLista[]>([]);
   const [erro, setErro] = useState<string | null>(null);
   const [carregando, setCarregando] = useState(true);
@@ -76,7 +85,7 @@ export function OrcamentosPage() {
       `*Orçamento Nº ${String(o.id).padStart(4, '0')}*`,
       o.cliente ? `Cliente: ${o.cliente}` : null,
       o.descricaoPeca ? `Peça: ${o.descricaoPeca}` : null,
-      `Material: ${o.material.nome}`,
+      `Material: ${o.itens.map((i) => i.material.nome).join(', ')}`,
       `Valor: ${fmt(o.precoCobrado)}`,
       '',
       'Segue o orçamento em anexo (PDF). Validade: 15 dias.',
@@ -145,7 +154,9 @@ export function OrcamentosPage() {
                 <tr key={o.id} className="border-b border-slate-100 dark:border-slate-800">
                   <td className="py-2 pr-4 text-slate-500 dark:text-slate-400">{o.id}</td>
                   <td className="py-2 pr-4">{o.cliente ?? o.descricaoPeca ?? '—'}</td>
-                  <td className="py-2 pr-4 text-slate-600 dark:text-slate-300">{o.material.nome}</td>
+                  <td className="py-2 pr-4 text-slate-600 dark:text-slate-300" title={o.itens.map((i) => i.material.nome).join(', ')}>
+                    {resumoMateriais(o)}
+                  </td>
                   <td className="py-2 pr-4 font-medium">{fmt(o.precoCobrado)}</td>
                   <td className="py-2 pr-4">
                     <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${badge[o.status]}`}>
@@ -161,6 +172,13 @@ export function OrcamentosPage() {
                           </Button>
                           <Button variante="secundario" className="px-2 py-1" onClick={() => agir(o.id, 'recusar')}>
                             Recusar
+                          </Button>
+                          <Button
+                            variante="secundario"
+                            className="px-2 py-1"
+                            onClick={() => navegar(`/simulador?orcamento=${o.id}`)}
+                          >
+                            Editar
                           </Button>
                         </>
                       )}
