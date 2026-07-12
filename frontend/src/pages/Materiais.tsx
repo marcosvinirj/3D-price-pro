@@ -129,14 +129,14 @@ export function MateriaisPage() {
                 ))}
               </Select>
             </Field>
+            <Field label="Cor">
+              <Input value={form.cor} onChange={(e) => set('cor', e.target.value)} placeholder="Ex.: Azul" />
+            </Field>
             <Field label="Preço por kg (€)">
               <Input type="number" min="0" step="0.01" value={form.precoKg} onChange={(e) => set('precoKg', e.target.value)} required />
             </Field>
             <Field label="Densidade (kg/g)">
               <Input type="number" min="0" step="0.01" value={form.densidade} onChange={(e) => set('densidade', e.target.value)} />
-            </Field>
-            <Field label="Cor">
-              <Input value={form.cor} onChange={(e) => set('cor', e.target.value)} />
             </Field>
             <Field label="Desperdício/purga (%)">
               <Input type="number" min="0" max="100" step="1" value={form.taxaDesperdicioPct} onChange={(e) => set('taxaDesperdicioPct', e.target.value)} />
@@ -164,6 +164,7 @@ export function MateriaisPage() {
               <tr className="border-b border-slate-200 dark:border-slate-700 text-left text-slate-500 dark:text-slate-400">
                 <th className="py-2 pr-4">Nome</th>
                 <th className="py-2 pr-4">Tipo</th>
+                <th className="py-2 pr-4">Cor</th>
                 <th className="py-2 pr-4">Preço/kg</th>
                 <th className="py-2 pr-4">Desperdício</th>
                 <th className="py-2 pr-4">Estoque</th>
@@ -175,6 +176,7 @@ export function MateriaisPage() {
                 <tr key={m.id} className="border-b border-slate-100 dark:border-slate-800">
                   <td className="py-2 pr-4 font-medium text-slate-700 dark:text-slate-200">{m.nome}</td>
                   <td className="py-2 pr-4 text-slate-600 dark:text-slate-300">{m.tipo}</td>
+                  <td className="py-2 pr-4 text-slate-600 dark:text-slate-300">{m.cor || '—'}</td>
                   <td className="py-2 pr-4">{eur(m.precoKg)}</td>
                   <td className="py-2 pr-4 text-slate-600 dark:text-slate-300">{pct(m.taxaDesperdicio)}</td>
                   <td className="py-2 pr-4">
@@ -197,7 +199,7 @@ export function MateriaisPage() {
               ))}
               {itens.length === 0 && (
                 <tr>
-                  <td colSpan={6} className="py-4 text-center text-slate-400 dark:text-slate-500">
+                  <td colSpan={7} className="py-4 text-center text-slate-400 dark:text-slate-500">
                     Nenhum material cadastrado.
                   </td>
                 </tr>

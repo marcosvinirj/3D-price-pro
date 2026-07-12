@@ -21,12 +21,15 @@ function formatar(valorBase: number, moeda: MoedaPdf) {
   return `${moeda.simbolo} ${v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
-/** Nome do material + cor, sem repetir a cor se ela ja' fizer parte do nome (ex.: "PLA Verde"). */
-function nomeComCor(material: { nome: string; cor: string | null }): string {
-  if (!material.cor) return material.nome;
-  return material.nome.toLowerCase().includes(material.cor.toLowerCase())
-    ? material.nome
-    : `${material.nome} ${material.cor}`;
+/**
+ * Nome do material com tipo e cor — a cor precisa ficar sempre visivel no
+ * PDF, para saber qual filamento (cor) esta' saindo do estoque. Nao repete a
+ * cor se ela ja' fizer parte do nome (ex.: material "PLA Verde" com cor "Verde").
+ */
+function rotuloMaterial(material: { nome: string; tipo: string; cor: string | null }): string {
+  const corRedundante = material.cor && material.nome.toLowerCase().includes(material.cor.toLowerCase());
+  const detalhes = [material.tipo, corRedundante ? null : material.cor].filter(Boolean).join(', ');
+  return detalhes ? `${material.nome} (${detalhes})` : material.nome;
 }
 
 const TINTA = rgb(0.04, 0.04, 0.04);
@@ -98,7 +101,7 @@ export async function gerarPdfOrcamento(
 
   // Lista das pecas do orcamento (podem usar materiais/cores diferentes).
   for (const it of orc.itens) {
-    const linhaItem = `${it.nome ?? 'Peça'} — ${nomeComCor(it.material)} (${it.material.tipo}) — ${it.pesoG.toLocaleString('pt-BR')} g`;
+    const linhaItem = `${it.nome ?? 'Peça'} — ${rotuloMaterial(it.material)} — ${it.pesoG.toLocaleString('pt-BR')} g`;
     texto(linhaItem, margem, y, { tamanho: 10, cor: SUAVE });
     y -= 15;
   }
@@ -128,7 +131,7 @@ export async function gerarPdfOrcamento(
     const proporcao = somaCustoItens > 0 ? it.custoItem / somaCustoItens : 1 / orc.itens.length;
     const valorPeca = ultimo ? restante : arredondar2(resultado.precoFinal * proporcao);
     restante = arredondar2(restante - valorPeca);
-    itemValor(`${it.nome ?? 'Peça'} — ${nomeComCor(it.material)}`, fmt(valorPeca));
+    itemValor(`${it.nome ?? 'Peça'} — ${rotuloMaterial(it.material)}`, fmt(valorPeca));
   });
   if (resultado.desconto && resultado.desconto.valorDescontado > 0) {
     itemValor('Desconto', `- ${fmt(resultado.desconto.valorDescontado)}`);
