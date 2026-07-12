@@ -61,7 +61,9 @@ const inicial: FormState = {
 
 /** Rotulo do material com tipo e cor, para deixar a escolha inequivoca. */
 function rotuloMaterial(m: Material): string {
-  const detalhes = [m.tipo, m.cor].filter(Boolean).join(', ');
+  // Nao repete a cor se ela ja' fizer parte do nome (ex.: "PLA Verde").
+  const corRedundante = m.cor && m.nome.toLowerCase().includes(m.cor.toLowerCase());
+  const detalhes = [m.tipo, corRedundante ? null : m.cor].filter(Boolean).join(', ');
   return detalhes ? `${m.nome} (${detalhes})` : m.nome;
 }
 

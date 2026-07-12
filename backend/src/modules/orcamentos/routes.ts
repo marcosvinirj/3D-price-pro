@@ -18,7 +18,13 @@ import { obterMoedaOuBase } from '../moedas/service.js';
 
 /** Junta o nome+cor dos materiais das pecas de um orcamento (p/ CSV/XLSX). */
 function materiaisResumo(o: { itens: { material: { nome: string; cor: string | null } }[] }): string {
-  return o.itens.map((i) => i.material.nome + (i.material.cor ? ` (${i.material.cor})` : '')).join(' + ');
+  return o.itens
+    .map((i) => {
+      // Nao repete a cor se ela ja' fizer parte do nome (ex.: "PLA Verde").
+      const redundante = i.material.cor && i.material.nome.toLowerCase().includes(i.material.cor.toLowerCase());
+      return i.material.nome + (i.material.cor && !redundante ? ` (${i.material.cor})` : '');
+    })
+    .join(' + ');
 }
 
 /** Escapa um campo para CSV (aspas duplas + envolve se tiver separador). */

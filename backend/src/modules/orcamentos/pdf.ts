@@ -7,6 +7,7 @@ import { PDFDocument, StandardFonts, rgb, type PDFFont } from 'pdf-lib';
 import { prisma } from '../../db/prisma.js';
 import { naoEncontrado } from '../../http/errors.js';
 import type { ResultadoPrecificacao } from '../../pricing/index.js';
+import { arredondar2 } from '../../pricing/money.js';
 
 /** Moeda de exibicao do PDF (valores na base sao convertidos). */
 export interface MoedaPdf {
@@ -18,6 +19,14 @@ export interface MoedaPdf {
 function formatar(valorBase: number, moeda: MoedaPdf) {
   const v = valorBase / moeda.taxaParaBase;
   return `${moeda.simbolo} ${v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
+/** Nome do material + cor, sem repetir a cor se ela ja' fizer parte do nome (ex.: "PLA Verde"). */
+function nomeComCor(material: { nome: string; cor: string | null }): string {
+  if (!material.cor) return material.nome;
+  return material.nome.toLowerCase().includes(material.cor.toLowerCase())
+    ? material.nome
+    : `${material.nome} ${material.cor}`;
 }
 
 const TINTA = rgb(0.04, 0.04, 0.04);
@@ -89,8 +98,7 @@ export async function gerarPdfOrcamento(
 
   // Lista das pecas do orcamento (podem usar materiais/cores diferentes).
   for (const it of orc.itens) {
-    const cor = it.material.cor ? ` ${it.material.cor}` : '';
-    const linhaItem = `${it.nome ?? 'Peça'} — ${it.material.nome}${cor} (${it.material.tipo}) — ${it.pesoG.toLocaleString('pt-BR')} g`;
+    const linhaItem = `${it.nome ?? 'Peça'} — ${nomeComCor(it.material)} (${it.material.tipo}) — ${it.pesoG.toLocaleString('pt-BR')} g`;
     texto(linhaItem, margem, y, { tamanho: 10, cor: SUAVE });
     y -= 15;
   }
@@ -110,8 +118,18 @@ export async function gerarPdfOrcamento(
     y -= forte ? 24 : 18;
   };
 
-  const rotuloPecas = orc.itens.length === 1 ? '1 peça' : `${orc.itens.length} peças`;
-  itemValor(`Impressão (${rotuloPecas})`, fmt(resultado.precoFinal));
+  // Rateia o preco final entre as pecas, proporcional ao peso de custo de
+  // cada uma (nunca mostra o custo em si — so' o preco resultante). O
+  // ultimo item leva o resto, para a soma bater exatamente com o total.
+  const somaCustoItens = orc.itens.reduce((s, it) => s + it.custoItem, 0);
+  let restante = resultado.precoFinal;
+  orc.itens.forEach((it, idx) => {
+    const ultimo = idx === orc.itens.length - 1;
+    const proporcao = somaCustoItens > 0 ? it.custoItem / somaCustoItens : 1 / orc.itens.length;
+    const valorPeca = ultimo ? restante : arredondar2(resultado.precoFinal * proporcao);
+    restante = arredondar2(restante - valorPeca);
+    itemValor(`${it.nome ?? 'Peça'} — ${nomeComCor(it.material)}`, fmt(valorPeca));
+  });
   if (resultado.desconto && resultado.desconto.valorDescontado > 0) {
     itemValor('Desconto', `- ${fmt(resultado.desconto.valorDescontado)}`);
   }
