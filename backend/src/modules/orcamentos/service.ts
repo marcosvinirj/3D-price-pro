@@ -325,6 +325,33 @@ export async function aprovarOrcamento(id: number, usuarioId: number) {
   });
 }
 
+/**
+ * Exclui um orcamento definitivamente. Se ja estava aprovado (estoque
+ * baixado), devolve o consumo de cada peca ao estoque do respectivo
+ * material antes de apagar — reverte por completo o efeito do orcamento.
+ */
+export async function excluirOrcamento(id: number, usuarioId: number) {
+  const orcamento = await prisma.orcamento.findFirst({
+    where: { id, usuarioId },
+    include: { itens: true },
+  });
+  if (!orcamento) throw naoEncontrado('Orcamento');
+
+  if (orcamento.estoqueBaixado) {
+    await prisma.$transaction([
+      ...orcamento.itens.map((it) =>
+        prisma.material.update({
+          where: { id: it.materialId },
+          data: { estoqueG: { increment: it.consumoG } },
+        }),
+      ),
+      prisma.orcamento.delete({ where: { id } }),
+    ]);
+  } else {
+    await prisma.orcamento.delete({ where: { id } });
+  }
+}
+
 /** Recusa um orcamento pendente. */
 export async function recusarOrcamento(id: number, usuarioId: number) {
   const orcamento = await prisma.orcamento.findFirst({ where: { id, usuarioId } });

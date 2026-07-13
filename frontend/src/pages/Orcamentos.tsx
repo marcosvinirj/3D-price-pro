@@ -62,6 +62,21 @@ export function OrcamentosPage() {
     }
   }
 
+  /** Exclui o orcamento; se ja estava aprovado, o estoque baixado e' devolvido. */
+  async function excluir(o: OrcamentoLista) {
+    const aviso =
+      o.status === 'aprovado'
+        ? 'Este orçamento já foi aprovado — o estoque baixado será devolvido aos materiais. Excluir mesmo assim?'
+        : 'Excluir este orçamento?';
+    if (!confirm(aviso)) return;
+    try {
+      await api.del(`/orcamentos/${o.id}`);
+      await carregar();
+    } catch (e) {
+      setErro(e instanceof ApiError ? e.message : 'Erro ao excluir');
+    }
+  }
+
   async function baixarPdf(id: number) {
     try {
       const q = codigoAtual !== 'EUR' ? `?moeda=${codigoAtual}` : '';
@@ -84,8 +99,7 @@ export function OrcamentosPage() {
     const linhas = [
       `*Orçamento Nº ${String(o.id).padStart(4, '0')}*`,
       o.cliente ? `Cliente: ${o.cliente}` : null,
-      o.descricaoPeca ? `Peça: ${o.descricaoPeca}` : null,
-      `Material: ${o.itens.map((i) => i.material.nome).join(', ')}`,
+      o.descricaoPeca ? `Produto: ${o.descricaoPeca}` : null,
       `Valor: ${fmt(o.precoCobrado)}`,
       '',
       'Segue o orçamento em anexo (PDF). Validade: 15 dias.',
@@ -142,7 +156,7 @@ export function OrcamentosPage() {
             <thead>
               <tr className="border-b border-slate-200 dark:border-slate-700 text-left text-slate-500 dark:text-slate-400">
                 <th className="py-2 pr-4">#</th>
-                <th className="py-2 pr-4">Cliente / Peça</th>
+                <th className="py-2 pr-4">Cliente / Produto</th>
                 <th className="py-2 pr-4">Material</th>
                 <th className="py-2 pr-4">Preço</th>
                 <th className="py-2 pr-4">Status</th>
@@ -153,7 +167,13 @@ export function OrcamentosPage() {
               {itens.map((o) => (
                 <tr key={o.id} className="border-b border-slate-100 dark:border-slate-800">
                   <td className="py-2 pr-4 text-slate-500 dark:text-slate-400">{o.id}</td>
-                  <td className="py-2 pr-4">{o.cliente ?? o.descricaoPeca ?? '—'}</td>
+                  <td className="py-2 pr-4">
+                    {o.cliente && <div>Cliente: {o.cliente}</div>}
+                    {o.descricaoPeca && (
+                      <div className="text-xs text-slate-500 dark:text-slate-400">Produto: {o.descricaoPeca}</div>
+                    )}
+                    {!o.cliente && !o.descricaoPeca && '—'}
+                  </td>
                   <td className="py-2 pr-4 text-slate-600 dark:text-slate-300" title={o.itens.map((i) => i.material.nome).join(', ')}>
                     {resumoMateriais(o)}
                   </td>
@@ -187,6 +207,9 @@ export function OrcamentosPage() {
                       </Button>
                       <Button variante="secundario" className="px-2 py-1" onClick={() => enviarWhatsApp(o)}>
                         WhatsApp
+                      </Button>
+                      <Button variante="perigo" className="px-2 py-1" onClick={() => excluir(o)}>
+                        Excluir
                       </Button>
                     </div>
                   </td>

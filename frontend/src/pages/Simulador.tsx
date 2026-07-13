@@ -111,7 +111,6 @@ interface Salvo {
   cliente: string;
   telefone: string;
   descricaoPeca: string;
-  materiaisResumo: string;
   precoCobrado: number;
 }
 
@@ -303,9 +302,6 @@ export function SimuladorPage() {
         cliente: r.orcamento.cliente ?? '',
         telefone: r.orcamento.telefone ?? '',
         descricaoPeca: r.orcamento.descricaoPeca ?? '',
-        materiaisResumo: r.orcamento.itens
-          .map((it) => it.material.nome + (it.material.cor ? ` (${it.material.cor})` : ''))
-          .join(', '),
         precoCobrado: r.orcamento.precoCobrado,
       });
     } catch (e) {
@@ -329,8 +325,7 @@ export function SimuladorPage() {
     const linhas = [
       `*Orçamento Nº ${String(s.id).padStart(4, '0')}*`,
       s.cliente ? `Cliente: ${s.cliente}` : null,
-      s.descricaoPeca ? `Peça: ${s.descricaoPeca}` : null,
-      s.materiaisResumo ? `Material: ${s.materiaisResumo}` : null,
+      s.descricaoPeca ? `Produto: ${s.descricaoPeca}` : null,
       `Valor: ${fmt(s.precoCobrado)}`,
       '',
       'Segue o orçamento em anexo (PDF). Validade: 15 dias.',

@@ -22,14 +22,13 @@ function formatar(valorBase: number, moeda: MoedaPdf) {
 }
 
 /**
- * Nome do material com tipo e cor — a cor precisa ficar sempre visivel no
- * PDF, para saber qual filamento (cor) esta' saindo do estoque. Nao repete a
- * cor se ela ja' fizer parte do nome (ex.: material "PLA Verde" com cor "Verde").
+ * Rotulo de uma peca no PDF: nome + so' a COR do filamento — nunca marca,
+ * tipo/tecnologia do material, marca/modelo da impressora ou peso (o
+ * cliente nao precisa desses detalhes tecnicos).
  */
-function rotuloMaterial(material: { nome: string; tipo: string; cor: string | null }): string {
-  const corRedundante = material.cor && material.nome.toLowerCase().includes(material.cor.toLowerCase());
-  const detalhes = [material.tipo, corRedundante ? null : material.cor].filter(Boolean).join(', ');
-  return detalhes ? `${material.nome} (${detalhes})` : material.nome;
+function rotuloItem(it: { nome: string | null; material: { cor: string | null } }): string {
+  const nome = it.nome ?? 'Peça';
+  return it.material.cor ? `${nome} — ${it.material.cor}` : nome;
 }
 
 const TINTA = rgb(0.04, 0.04, 0.04);
@@ -49,7 +48,7 @@ export async function gerarPdfOrcamento(
 ): Promise<Uint8Array> {
   const orc = await prisma.orcamento.findUnique({
     where: { id },
-    include: { itens: { include: { material: true }, orderBy: { ordem: 'asc' } }, impressora: true },
+    include: { itens: { include: { material: true }, orderBy: { ordem: 'asc' } } },
   });
   if (!orc) throw naoEncontrado('Orcamento');
 
@@ -94,18 +93,7 @@ export async function gerarPdfOrcamento(
   par('CLIENTE', orc.cliente || '—');
   texto('PEÇA', width / 2, y, { tamanho: 9, cor: SUAVE });
   texto(orc.descricaoPeca || '—', width / 2, y - 14, { fonte: bold, tamanho: 12 });
-  y -= 42;
-
-  texto(`Impressora: ${orc.impressora.nome}`, margem, y, { cor: SUAVE });
-  y -= 18;
-
-  // Lista das pecas do orcamento (podem usar materiais/cores diferentes).
-  for (const it of orc.itens) {
-    const linhaItem = `${it.nome ?? 'Peça'} — ${rotuloMaterial(it.material)} — ${it.pesoG.toLocaleString('pt-BR')} g`;
-    texto(linhaItem, margem, y, { tamanho: 10, cor: SUAVE });
-    y -= 15;
-  }
-  y -= 10;
+  y -= 50;
 
   // Tabela de valores
   linha(y);
@@ -131,7 +119,7 @@ export async function gerarPdfOrcamento(
     const proporcao = somaCustoItens > 0 ? it.custoItem / somaCustoItens : 1 / orc.itens.length;
     const valorPeca = ultimo ? restante : arredondar2(resultado.precoFinal * proporcao);
     restante = arredondar2(restante - valorPeca);
-    itemValor(`${it.nome ?? 'Peça'} — ${rotuloMaterial(it.material)}`, fmt(valorPeca));
+    itemValor(rotuloItem(it), fmt(valorPeca));
   });
   if (resultado.desconto && resultado.desconto.valorDescontado > 0) {
     itemValor('Desconto', `- ${fmt(resultado.desconto.valorDescontado)}`);

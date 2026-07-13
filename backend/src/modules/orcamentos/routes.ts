@@ -8,6 +8,7 @@ import {
   simular,
   criarOrcamento,
   editarOrcamento,
+  excluirOrcamento,
   aprovarOrcamento,
   recusarOrcamento,
   listarOrcamentos,
@@ -220,5 +221,14 @@ orcamentosRouter.post(
   '/:id/recusar',
   asyncHandler(async (req, res) => {
     res.json(await recusarOrcamento(obterId(req), req.usuario!.sub));
+  }),
+);
+
+/** Exclui um orcamento; se ja estava aprovado, devolve o estoque baixado. */
+orcamentosRouter.delete(
+  '/:id',
+  asyncHandler(async (req, res) => {
+    await excluirOrcamento(obterId(req), req.usuario!.sub);
+    res.status(204).end();
   }),
 );
