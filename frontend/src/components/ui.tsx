@@ -55,6 +55,58 @@ export function Select(props: SelectHTMLAttributes<HTMLSelectElement>) {
   return <select className={inputCls} {...props} />;
 }
 
+/**
+ * Input de duracao em horas + minutos inteiros — evita o usuario ter que
+ * converter minutos em fracao decimal de hora (ex.: "30 min" em vez de "0.5").
+ * O chamador e' responsavel por combinar os dois em horas decimais quando
+ * for enviar para a API (ver `paraHorasDecimais` no Simulador).
+ */
+export function DuracaoInput({
+  horas,
+  minutos,
+  onHorasChange,
+  onMinutosChange,
+}: {
+  horas: string;
+  minutos: string;
+  onHorasChange: (v: string) => void;
+  onMinutosChange: (v: string) => void;
+}) {
+  return (
+    <div className="flex gap-2">
+      <div className="relative flex-1">
+        <input
+          type="number"
+          min="0"
+          step="1"
+          value={horas}
+          onChange={(e) => onHorasChange(e.target.value)}
+          className={`${inputCls} pr-8`}
+          aria-label="Horas"
+        />
+        <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs text-slate-400 dark:text-slate-500">
+          h
+        </span>
+      </div>
+      <div className="relative flex-1">
+        <input
+          type="number"
+          min="0"
+          max="59"
+          step="1"
+          value={minutos}
+          onChange={(e) => onMinutosChange(e.target.value)}
+          className={`${inputCls} pr-10`}
+          aria-label="Minutos"
+        />
+        <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs text-slate-400 dark:text-slate-500">
+          min
+        </span>
+      </div>
+    </div>
+  );
+}
+
 export function Card({
   titulo,
   acoes,

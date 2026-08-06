@@ -12,7 +12,7 @@ import type {
   ResultadoPrecificacao,
   RespostaSimulacao,
 } from '../lib/types';
-import { Alerta, Button, Card, Field, Input, pct, Select } from '../components/ui';
+import { Alerta, Button, Card, DuracaoInput, Field, Input, gramas, pct, Select } from '../components/ui';
 import { useMoeda } from '../lib/moeda';
 
 /** Uma peca do formulario (numeros como string para edicao fluida). */
@@ -20,8 +20,24 @@ interface ItemForm {
   nome: string;
   materialId: string;
   pesoG: string;
-  tempoImpressaoH: string;
-  tempoPosProcessamentoH: string;
+  /** Tempo de impressao e pos-processamento entram como horas + minutos inteiros
+   *  (mais claro que uma fracao decimal) e sao combinados em horas decimais
+   *  — a unidade que o motor de precificacao usa — na hora de montar o payload. */
+  tempoImpressaoHoras: string;
+  tempoImpressaoMinutos: string;
+  tempoPosProcessamentoHoras: string;
+  tempoPosProcessamentoMinutos: string;
+}
+
+/** Combina horas + minutos (strings do formulario) em horas decimais, para a API. */
+function paraHorasDecimais(horas: string, minutos: string): number {
+  return (Number(horas) || 0) + (Number(minutos) || 0) / 60;
+}
+
+/** Converte horas decimais (vindas da API) de volta para horas + minutos inteiros, para prefill. */
+function paraHorasEMinutos(decimal: number): { horas: string; minutos: string } {
+  const totalMin = Math.round(decimal * 60);
+  return { horas: String(Math.floor(totalMin / 60)), minutos: String(totalMin % 60) };
 }
 
 /** Estado do formulario. */
@@ -42,8 +58,10 @@ const itemInicial: ItemForm = {
   nome: '',
   materialId: '',
   pesoG: '50',
-  tempoImpressaoH: '4',
-  tempoPosProcessamentoH: '0.5',
+  tempoImpressaoHoras: '4',
+  tempoImpressaoMinutos: '0',
+  tempoPosProcessamentoHoras: '0',
+  tempoPosProcessamentoMinutos: '30',
 };
 
 const inicial: FormState = {
@@ -78,8 +96,8 @@ function montarInput(f: FormState): OrcamentoInput | null {
     ...(it.nome.trim() ? { nome: it.nome.trim() } : {}),
     materialId: Number(it.materialId),
     pesoG: Number(it.pesoG),
-    tempoImpressaoH: Number(it.tempoImpressaoH),
-    tempoPosProcessamentoH: Number(it.tempoPosProcessamentoH),
+    tempoImpressaoH: paraHorasDecimais(it.tempoImpressaoHoras, it.tempoImpressaoMinutos),
+    tempoPosProcessamentoH: paraHorasDecimais(it.tempoPosProcessamentoHoras, it.tempoPosProcessamentoMinutos),
   }));
 
   return {
@@ -197,13 +215,19 @@ export function SimuladorPage() {
           telefone: o.telefone ?? '',
           descricaoPeca: o.descricaoPeca ?? '',
           impressoraId: String(o.impressoraId),
-          itens: o.itens.map((it) => ({
-            nome: it.nome ?? '',
-            materialId: String(it.materialId),
-            pesoG: String(it.pesoG),
-            tempoImpressaoH: String(it.tempoImpressaoH),
-            tempoPosProcessamentoH: String(it.tempoPosProcessamentoH),
-          })),
+          itens: o.itens.map((it) => {
+            const impressao = paraHorasEMinutos(it.tempoImpressaoH);
+            const posProcessamento = paraHorasEMinutos(it.tempoPosProcessamentoH);
+            return {
+              nome: it.nome ?? '',
+              materialId: String(it.materialId),
+              pesoG: String(it.pesoG),
+              tempoImpressaoHoras: impressao.horas,
+              tempoImpressaoMinutos: impressao.minutos,
+              tempoPosProcessamentoHoras: posProcessamento.horas,
+              tempoPosProcessamentoMinutos: posProcessamento.minutos,
+            };
+          }),
           taxaFalhaPct: String(Math.round(entrada.parametros.taxaFalha * 100)),
           margemLucroPct: String(Math.round(o.resultado.margem.planejada * 100)),
           descontoPct:
@@ -450,11 +474,29 @@ export function SimuladorPage() {
                   <Field label="Peso (g)">
                     <Input type="number" min="0" step="0.1" value={it.pesoG} onChange={(e) => setItem(idx, 'pesoG', e.target.value)} />
                   </Field>
-                  <Field label="Tempo de impressão (h)">
-                    <Input type="number" min="0" step="0.1" value={it.tempoImpressaoH} onChange={(e) => setItem(idx, 'tempoImpressaoH', e.target.value)} />
+                </div>
+                <div className="mt-3 grid grid-cols-2 gap-3">
+                  <Field label="Tempo de impressão">
+                    <DuracaoInput
+                      horas={it.tempoImpressaoHoras}
+                      minutos={it.tempoImpressaoMinutos}
+                      onHorasChange={(v) => setItem(idx, 'tempoImpressaoHoras', v)}
+                      onMinutosChange={(v) => setItem(idx, 'tempoImpressaoMinutos', v)}
+                    />
+                    <span className="mt-1 block text-xs text-slate-400 dark:text-slate-500">
+                      = {paraHorasDecimais(it.tempoImpressaoHoras, it.tempoImpressaoMinutos).toLocaleString('pt-BR', { maximumFractionDigits: 2 })} h · vale para energia, depreciação e custo fixo
+                    </span>
                   </Field>
-                  <Field label="Pós-processamento (h)">
-                    <Input type="number" min="0" step="0.1" value={it.tempoPosProcessamentoH} onChange={(e) => setItem(idx, 'tempoPosProcessamentoH', e.target.value)} />
+                  <Field label="Pós-processamento (mão de obra)">
+                    <DuracaoInput
+                      horas={it.tempoPosProcessamentoHoras}
+                      minutos={it.tempoPosProcessamentoMinutos}
+                      onHorasChange={(v) => setItem(idx, 'tempoPosProcessamentoHoras', v)}
+                      onMinutosChange={(v) => setItem(idx, 'tempoPosProcessamentoMinutos', v)}
+                    />
+                    <span className="mt-1 block text-xs text-slate-400 dark:text-slate-500">
+                      = {paraHorasDecimais(it.tempoPosProcessamentoHoras, it.tempoPosProcessamentoMinutos).toLocaleString('pt-BR', { maximumFractionDigits: 2 })} h · vale para o custo de mão de obra
+                    </span>
                   </Field>
                 </div>
               </div>
@@ -585,6 +627,7 @@ export function SimuladorPage() {
                 const formItem = form.itens[idx];
                 const material = formItem ? materiais.find((m) => String(m.id) === formItem.materialId) : undefined;
                 const estoque = sim.itens[idx];
+                const desperdicio = material?.taxaDesperdicio ?? 0;
                 return (
                   <div
                     key={idx}
@@ -595,7 +638,10 @@ export function SimuladorPage() {
                         {it.nome || `Peça ${idx + 1}`}
                       </div>
                       <div className="text-xs text-slate-500 dark:text-slate-400">
-                        {material ? rotuloMaterial(material) : '—'} · {it.pesoG.toLocaleString('pt-BR')} g
+                        {material ? rotuloMaterial(material) : '—'} · peso {it.pesoG.toLocaleString('pt-BR')} g
+                        {estoque && desperdicio > 0 && (
+                          <> · consumo {estoque.consumoG.toLocaleString('pt-BR', { maximumFractionDigits: 1 })} g (+{pct(desperdicio)} desperdício do material)</>
+                        )}
                         {estoque && !estoque.estoqueSuficiente && (
                           <span className="ml-2 text-amber-600">(estoque insuficiente)</span>
                         )}
@@ -625,25 +671,42 @@ export function SimuladorPage() {
               <Linha rotulo="Custo + provisão de falha" valor={r.custos.custoComFalha} fmt={fmt} />
               <Linha rotulo="Lucro" valor={r.margem.lucro} fmt={fmt} />
             </dl>
-            <div className="mt-4 flex items-center justify-between border-t border-slate-100 dark:border-slate-800 pt-3 text-sm text-slate-500 dark:text-slate-400">
-              <span>
-                Consumo total:{' '}
-                <strong className="text-slate-700 dark:text-slate-200">
-                  {sim?.itens.reduce((s, i) => s + i.consumoG, 0).toFixed(1)} g
-                </strong>
-                {sim && !sim.estoqueSuficiente && <span className="ml-2 text-amber-600">(estoque insuficiente)</span>}
-              </span>
-              <Button onClick={salvar} disabled={salvando || !r.margem.atingeMinima}>
-                {salvando ? 'Salvando...' : editando ? 'Salvar alterações' : 'Salvar orçamento'}
-              </Button>
-            </div>
+            {(() => {
+              const pesoTotal = r.itens.reduce((s, i) => s + i.pesoG, 0);
+              const consumoTotal = sim?.itens.reduce((s, i) => s + i.consumoG, 0) ?? pesoTotal;
+              const temDesperdicio = Math.abs(consumoTotal - pesoTotal) > 0.05;
+              return (
+                <div className="mt-4 border-t border-slate-100 dark:border-slate-800 pt-3">
+                  <div className="text-sm text-slate-500 dark:text-slate-400">
+                    {temDesperdicio && (
+                      <div>
+                        Peso das peças: <strong className="text-slate-700 dark:text-slate-200">{gramas(pesoTotal)}</strong>
+                      </div>
+                    )}
+                    <div title="Consumo total = peso das peças + a taxa de desperdício (perda de purga/suporte) configurada em cada material. É o que é baixado do estoque.">
+                      Consumo total{temDesperdicio ? ' (com desperdício do material)' : ''}:{' '}
+                      <strong className="text-slate-700 dark:text-slate-200">{gramas(consumoTotal)}</strong>
+                      {sim && !sim.estoqueSuficiente && <span className="ml-2 text-amber-600">(estoque insuficiente)</span>}
+                    </div>
+                  </div>
+                  <div className="mt-3 flex justify-end">
+                    <Button onClick={salvar} disabled={salvando || !r.margem.atingeMinima}>
+                      {salvando ? 'Salvando...' : editando ? 'Salvar alterações' : 'Salvar orçamento'}
+                    </Button>
+                  </div>
+                </div>
+              );
+            })()}
           </Card>
         )}
 
         {r && (
           <InteligenciaNegocio
             r={r}
-            tempoImpressaoH={form.itens.reduce((s, it) => s + Number(it.tempoImpressaoH || 0), 0)}
+            tempoImpressaoH={form.itens.reduce(
+              (s, it) => s + paraHorasDecimais(it.tempoImpressaoHoras, it.tempoImpressaoMinutos),
+              0,
+            )}
             fmt={fmt}
           />
         )}
