@@ -487,7 +487,7 @@ export function SimuladorPage() {
                       = {paraHorasDecimais(it.tempoImpressaoHoras, it.tempoImpressaoMinutos).toLocaleString('pt-BR', { maximumFractionDigits: 2 })} h · vale para energia, depreciação e custo fixo
                     </span>
                   </Field>
-                  <Field label="Pós-processamento (mão de obra)">
+                  <Field label="Pós-processamento">
                     <DuracaoInput
                       horas={it.tempoPosProcessamentoHoras}
                       minutos={it.tempoPosProcessamentoMinutos}
