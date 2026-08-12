@@ -56,6 +56,18 @@ export interface CustoVariavel {
   ativo: boolean;
 }
 
+/** Insumo consumido POR PECA (argola, escovinha, saco zip...). Ao contrario
+ *  de CustoVariavel (cobrado uma vez por orcamento), o consumo escala com a
+ *  quantidade de pecas do item que o usa — tem estoque proprio em unidades. */
+export interface Insumo {
+  id: number;
+  nome: string;
+  valorUnitario: number;
+  estoqueUnidades: number;
+  estoqueMinimoUnidades: number;
+  estoqueBaixo: boolean;
+}
+
 export interface Configuracao {
   id: number;
   precoKwh: number;
@@ -87,6 +99,7 @@ export interface DetalhamentoCustos {
   maoDeObra: number;
   custoFixoRateado: number;
   custoVariavel: number;
+  custoInsumos: number;
   custoTotal: number;
   custoComFalha: number;
 }
@@ -95,11 +108,13 @@ export interface DetalhamentoCustos {
 export interface DetalhamentoItemCusto {
   nome?: string;
   pesoG: number;
+  quantidade: number;
   custoMaterial: number;
   custoEnergia: number;
   depreciacao: number;
   maoDeObra: number;
   custoFixoRateado: number;
+  custoInsumos: number;
   custoItemTotal: number;
 }
 
@@ -124,11 +139,22 @@ export interface ResultadoPrecificacao {
 export interface RespostaSimulacao {
   resultado: ResultadoPrecificacao;
   /** Consumo/estoque por peca (mesma ordem dos itens enviados). */
-  itens: { materialId: number; consumoG: number; estoqueSuficiente: boolean }[];
+  itens: {
+    materialId: number;
+    consumoG: number;
+    estoqueSuficiente: boolean;
+    insumos: { insumoId: number; totalUnidades: number; estoqueSuficiente: boolean }[];
+  }[];
   estoqueSuficiente: boolean;
 }
 
 export type ModoArredondamento = 'nenhum' | 'maisProximo' | 'paraCima' | 'psicologico';
+
+/** Um insumo usado numa peca, com a quantidade usada POR UNIDADE da peca (ex.: 1 argola por canudo). */
+export interface OrcamentoItemInsumoInput {
+  insumoId: number;
+  quantidade: number;
+}
 
 export interface OrcamentoItemInput {
   nome?: string;
@@ -136,6 +162,9 @@ export interface OrcamentoItemInput {
   pesoG: number;
   tempoImpressaoH: number;
   tempoPosProcessamentoH: number;
+  /** Unidades identicas que esta peca representa (25 canudos = 25). */
+  quantidade: number;
+  insumos?: OrcamentoItemInsumoInput[];
 }
 
 export interface OrcamentoInput {
@@ -154,6 +183,15 @@ export interface OrcamentoInput {
   descricaoPeca?: string;
 }
 
+/** Um insumo usado numa peca ja salva (como devolvido pela API). */
+export interface OrcamentoItemInsumoSalvo {
+  id: number;
+  insumoId: number;
+  quantidadePorPeca: number;
+  valorUnitarioSnapshot: number;
+  insumo: { nome: string };
+}
+
 /** Uma peca de um orcamento ja salvo (como devolvido pela API). */
 export interface OrcamentoItemSalvo {
   id: number;
@@ -161,10 +199,12 @@ export interface OrcamentoItemSalvo {
   pesoG: number;
   tempoImpressaoH: number;
   tempoPosProcessamentoH: number;
+  quantidade: number;
   consumoG: number;
   custoItem: number;
   materialId: number;
   material: { nome: string; cor: string | null; tipo?: string };
+  insumos: OrcamentoItemInsumoSalvo[];
 }
 
 /** Orcamento completo, como devolvido por GET /orcamentos/:id. */

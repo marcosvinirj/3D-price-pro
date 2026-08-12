@@ -6,6 +6,7 @@ import { useTema } from '../lib/theme';
 import { Logo } from './ui';
 import {
   IconBolt,
+  IconBox,
   IconCalc,
   IconClose,
   IconCoins,
@@ -39,6 +40,7 @@ const GRUPOS: { titulo: string; itens: Item[] }[] = [
       { to: '/impressoras', label: 'Impressoras', icon: IconPrinter },
       { to: '/custos-fixos', label: 'Custos fixos', icon: IconHome },
       { to: '/custos-variaveis', label: 'Custos variáveis', icon: IconBolt },
+      { to: '/insumos', label: 'Insumos', icon: IconBox },
     ],
   },
   {
@@ -56,7 +58,7 @@ function TituloPagina() {
   const atual =
     todos.find((i) => (i.end ? pathname === i.to : pathname.startsWith(i.to) && i.to !== '/')) ??
     todos.find((i) => i.to === '/');
-  return <span>{atual?.label ?? '3D Price Pro'}</span>;
+  return <span>{atual?.label ?? 'Price 3D'}</span>;
 }
 
 function ThemeToggle() {
@@ -93,7 +95,7 @@ function SidebarConteudo({ onNavegar }: { onNavegar?: () => void }) {
         </div>
         <div className="leading-tight">
           <div className="text-[15px] font-bold tracking-tight text-slate-900 dark:text-white">
-            3D Price <span className="text-gradient">Pro</span>
+            Price <span className="text-gradient">3D</span>
           </div>
           <div className="text-[10px] font-medium uppercase tracking-wider text-slate-400 dark:text-slate-500">
             Precificação inteligente

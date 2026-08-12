@@ -1,4 +1,4 @@
-# 3D Price Pro — Precificação para Impressão 3D
+# Price 3D — Precificação para Impressão 3D
 
 Monorepo. O **backend** (Node + Express + Prisma + SQLite + JWT + Zod) é
 construído em volta de um **motor de cálculo puro e testável** (43 testes:

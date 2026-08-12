@@ -22,6 +22,7 @@ model User {
   impressoras     Impressora[]
   custosFixos     CustoFixo[]
   custosVariaveis CustoVariavel[]
+  insumos         Insumo[]
   moedas          Moeda[]
   configuracao    Configuracao?
 }
@@ -95,6 +96,28 @@ model CustoVariavel {
   @@index([usuarioId])
 }
 
+// Insumos consumidos POR PECA (argola, escovinha, saco zip...). Diferente dos
+// Custos Variaveis (cobrados uma vez por orcamento inteiro), o consumo de um
+// insumo escala com a quantidade de pecas do item que o usa — 25 unidades de
+// uma peca que leva 1 argola cada = 25 argolas, nao 1. Tem estoque proprio em
+// UNIDADES (nao gramas), com o mesmo padrao de alerta de estoque baixo do
+// Material.
+model Insumo {
+  id                    Int      @id @default(autoincrement())
+  nome                  String
+  valorUnitario         Float // custo de UMA unidade do insumo
+  estoqueUnidades       Int      @default(0)
+  estoqueMinimoUnidades Int      @default(0)
+  ativo                 Boolean  @default(true)
+  criadoEm              DateTime @default(now())
+  itens                 OrcamentoItemInsumo[]
+
+  usuarioId Int
+  usuario   User @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+
+  @@index([usuarioId])
+}
+
 // Moedas para EXIBICAO, por usuario. O calculo e sempre na moeda base EUR
 // (fonte da verdade); a moeda so converte valores mostrados. taxaParaBase =
 // quanto vale 1 unidade em EUR.
@@ -158,15 +181,20 @@ model Orcamento {
 
 // Uma peca dentro de um orcamento (ex.: "Cauda", "Torso" de um modelo
 // impresso em varias partes). Cada peca pode usar um material/cor proprio.
+// `quantidade` e' o numero de unidades IDENTICAS que essa linha representa
+// (ex.: 25 canudos impressos juntos na mesma leva): peso/consumo de material
+// e insumos escalam por ela, mas tempoImpressaoH/tempoPosProcessamentoH NAO
+// (sao o tempo do lote inteiro, nao de uma unidade).
 model OrcamentoItem {
   id                     Int    @id @default(autoincrement())
   nome                   String?
   pesoG                  Float
   tempoImpressaoH        Float
   tempoPosProcessamentoH Float
+  quantidade             Int    @default(1)
   // Snapshots calculados na criacao/edicao (regra 6): nao mudam se o
   // material for reajustado depois.
-  consumoG               Float // pesoG * (1 + taxaDesperdicio) no momento do calculo
+  consumoG               Float // pesoG * (1 + taxaDesperdicio) * quantidade no momento do calculo
   custoItem              Float // custo desta peca (sem markup), para exibicao
   ordem                  Int    @default(0)
 
@@ -174,7 +202,25 @@ model OrcamentoItem {
   orcamento   Orcamento @relation(fields: [orcamentoId], references: [id], onDelete: Cascade)
   materialId  Int
   material    Material  @relation(fields: [materialId], references: [id])
+  insumos     OrcamentoItemInsumo[]
 
   @@index([orcamentoId])
   @@index([materialId])
+}
+
+// Insumo usado numa peca do orcamento, com a quantidade usada POR UNIDADE da
+// peca (ex.: 1 argola por canudo — o consumo total e' quantidadePorPeca *
+// OrcamentoItem.quantidade). Snapshot do preco do insumo (regra 6).
+model OrcamentoItemInsumo {
+  id                    Int   @id @default(autoincrement())
+  quantidadePorPeca     Int
+  valorUnitarioSnapshot Float
+
+  orcamentoItemId Int
+  orcamentoItem   OrcamentoItem @relation(fields: [orcamentoItemId], references: [id], onDelete: Cascade)
+  insumoId Int
+  insumo   Insumo @relation(fields: [insumoId], references: [id])
+
+  @@index([orcamentoItemId])
+  @@index([insumoId])
 }

@@ -9,6 +9,7 @@ import { MateriaisPage } from './pages/Materiais';
 import { ImpressorasPage } from './pages/Impressoras';
 import { CustosFixosPage } from './pages/CustosFixos';
 import { CustosVariaveisPage } from './pages/CustosVariaveis';
+import { InsumosPage } from './pages/Insumos';
 import { ConfiguracaoPage } from './pages/Configuracao';
 import { MoedasPage } from './pages/Moedas';
 
@@ -37,6 +38,7 @@ export function App() {
         <Route path="/impressoras" element={<ImpressorasPage />} />
         <Route path="/custos-fixos" element={<CustosFixosPage />} />
         <Route path="/custos-variaveis" element={<CustosVariaveisPage />} />
+        <Route path="/insumos" element={<InsumosPage />} />
         <Route path="/moedas" element={<MoedasPage />} />
         <Route path="/configuracao" element={<ConfiguracaoPage />} />
       </Route>

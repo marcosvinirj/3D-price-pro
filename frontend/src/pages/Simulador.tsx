@@ -5,6 +5,7 @@ import { useDebounce } from '../lib/useDebounce';
 import type {
   CustoVariavel,
   Impressora,
+  Insumo,
   Material,
   ModoArredondamento,
   OrcamentoInput,
@@ -14,6 +15,12 @@ import type {
 } from '../lib/types';
 import { Alerta, Button, Card, DuracaoInput, Field, Input, gramas, pct, Select } from '../components/ui';
 import { useMoeda } from '../lib/moeda';
+
+/** Um insumo selecionado numa peca, com a quantidade usada POR UNIDADE dela. */
+interface ItemInsumoForm {
+  insumoId: string;
+  quantidade: string;
+}
 
 /** Uma peca do formulario (numeros como string para edicao fluida). */
 interface ItemForm {
@@ -27,6 +34,10 @@ interface ItemForm {
   tempoImpressaoMinutos: string;
   tempoPosProcessamentoHoras: string;
   tempoPosProcessamentoMinutos: string;
+  /** Unidades identicas que esta peca representa (25 canudos = 25). Peso e
+   *  insumos escalam por ela; tempo de impressao/pos-processamento NAO. */
+  quantidade: string;
+  insumosSelecionados: ItemInsumoForm[];
 }
 
 /** Combina horas + minutos (strings do formulario) em horas decimais, para a API. */
@@ -62,6 +73,8 @@ const itemInicial: ItemForm = {
   tempoImpressaoMinutos: '0',
   tempoPosProcessamentoHoras: '0',
   tempoPosProcessamentoMinutos: '30',
+  quantidade: '1',
+  insumosSelecionados: [],
 };
 
 const inicial: FormState = {
@@ -98,6 +111,15 @@ function montarInput(f: FormState): OrcamentoInput | null {
     pesoG: Number(it.pesoG),
     tempoImpressaoH: paraHorasDecimais(it.tempoImpressaoHoras, it.tempoImpressaoMinutos),
     tempoPosProcessamentoH: paraHorasDecimais(it.tempoPosProcessamentoHoras, it.tempoPosProcessamentoMinutos),
+    quantidade: Number(it.quantidade) || 1,
+    ...(it.insumosSelecionados.length
+      ? {
+          insumos: it.insumosSelecionados.map((x) => ({
+            insumoId: Number(x.insumoId),
+            quantidade: Number(x.quantidade) || 1,
+          })),
+        }
+      : {}),
   }));
 
   return {
@@ -160,6 +182,8 @@ interface OrcamentoParaEditar {
     pesoG: number;
     tempoImpressaoH: number;
     tempoPosProcessamentoH: number;
+    quantidade: number;
+    insumos: { insumoId: number; quantidadePorPeca: number }[];
   }[];
   resultado: ResultadoPrecificacao;
 }
@@ -173,6 +197,7 @@ export function SimuladorPage() {
   const [materiais, setMateriais] = useState<Material[]>([]);
   const [impressoras, setImpressoras] = useState<Impressora[]>([]);
   const [custosVariaveis, setCustosVariaveis] = useState<CustoVariavel[]>([]);
+  const [insumosDisponiveis, setInsumosDisponiveis] = useState<Insumo[]>([]);
   const [form, setForm] = useState<FormState>(inicial);
   const [sim, setSim] = useState<RespostaSimulacao | null>(null);
   const [erro, setErro] = useState<string | null>(null);
@@ -187,14 +212,16 @@ export function SimuladorPage() {
   // Carrega cadastros e, se for edicao, o orcamento existente (prefill).
   useEffect(() => {
     async function carregar() {
-      const [mats, imps, vars] = await Promise.all([
+      const [mats, imps, vars, insumosDisp] = await Promise.all([
         api.get<Material[]>('/materiais'),
         api.get<Impressora[]>('/impressoras'),
         api.get<CustoVariavel[]>('/custos-variaveis'),
+        api.get<Insumo[]>('/insumos'),
       ]);
       setMateriais(mats);
       setImpressoras(imps);
       setCustosVariaveis(vars);
+      setInsumosDisponiveis(insumosDisp);
 
       if (orcamentoIdEdicao) {
         const o = await api.get<OrcamentoParaEditar>(`/orcamentos/${orcamentoIdEdicao}`);
@@ -226,6 +253,11 @@ export function SimuladorPage() {
               tempoImpressaoMinutos: impressao.minutos,
               tempoPosProcessamentoHoras: posProcessamento.horas,
               tempoPosProcessamentoMinutos: posProcessamento.minutos,
+              quantidade: String(it.quantidade ?? 1),
+              insumosSelecionados: (it.insumos ?? []).map((iu) => ({
+                insumoId: String(iu.insumoId),
+                quantidade: String(iu.quantidadePorPeca),
+              })),
             };
           }),
           taxaFalhaPct: String(Math.round(entrada.parametros.taxaFalha * 100)),
@@ -291,6 +323,44 @@ export function SimuladorPage() {
     setForm((f) => ({
       ...f,
       itens: f.itens.map((it, i) => (i === idx ? { ...it, [campo]: valor } : it)),
+    }));
+    setMsgSalvo(null);
+    setSalvo(null);
+  }
+
+  /** Liga/desliga um insumo numa peca (comeca com quantidade 1 por unidade). */
+  function alternarInsumoItem(idx: number, insumoId: number) {
+    setForm((f) => ({
+      ...f,
+      itens: f.itens.map((it, i) => {
+        if (i !== idx) return it;
+        const ligado = it.insumosSelecionados.some((x) => x.insumoId === String(insumoId));
+        return {
+          ...it,
+          insumosSelecionados: ligado
+            ? it.insumosSelecionados.filter((x) => x.insumoId !== String(insumoId))
+            : [...it.insumosSelecionados, { insumoId: String(insumoId), quantidade: '1' }],
+        };
+      }),
+    }));
+    setMsgSalvo(null);
+    setSalvo(null);
+  }
+
+  /** Ajusta quantas unidades do insumo cada UNIDADE da peca usa (ex.: 2 argolas por canudo). */
+  function setInsumoQuantidade(idx: number, insumoId: number, quantidade: string) {
+    setForm((f) => ({
+      ...f,
+      itens: f.itens.map((it, i) =>
+        i !== idx
+          ? it
+          : {
+              ...it,
+              insumosSelecionados: it.insumosSelecionados.map((x) =>
+                x.insumoId === String(insumoId) ? { ...x, quantidade } : x,
+              ),
+            },
+      ),
     }));
     setMsgSalvo(null);
     setSalvo(null);
@@ -471,8 +541,20 @@ export function SimuladorPage() {
                       ))}
                     </Select>
                   </Field>
-                  <Field label="Peso (g)">
+                  <Field label="Peso (g) — de 1 unidade">
                     <Input type="number" min="0" step="0.1" value={it.pesoG} onChange={(e) => setItem(idx, 'pesoG', e.target.value)} />
+                  </Field>
+                  <Field label="Quantidade">
+                    <Input
+                      type="number"
+                      min="1"
+                      step="1"
+                      value={it.quantidade}
+                      onChange={(e) => setItem(idx, 'quantidade', e.target.value)}
+                    />
+                    <span className="mt-1 block text-xs text-slate-400 dark:text-slate-500">
+                      unidades iguais nesta leva — multiplica peso e insumos
+                    </span>
                   </Field>
                 </div>
                 <div className="mt-3 grid grid-cols-2 gap-3">
@@ -484,7 +566,7 @@ export function SimuladorPage() {
                       onMinutosChange={(v) => setItem(idx, 'tempoImpressaoMinutos', v)}
                     />
                     <span className="mt-1 block text-xs text-slate-400 dark:text-slate-500">
-                      = {paraHorasDecimais(it.tempoImpressaoHoras, it.tempoImpressaoMinutos).toLocaleString('pt-BR', { maximumFractionDigits: 2 })} h · vale para energia, depreciação e custo fixo
+                      = {paraHorasDecimais(it.tempoImpressaoHoras, it.tempoImpressaoMinutos).toLocaleString('pt-BR', { maximumFractionDigits: 2 })} h do LOTE (não multiplica) · energia, depreciação e custo fixo
                     </span>
                   </Field>
                   <Field label="Pós-processamento">
@@ -495,10 +577,61 @@ export function SimuladorPage() {
                       onMinutosChange={(v) => setItem(idx, 'tempoPosProcessamentoMinutos', v)}
                     />
                     <span className="mt-1 block text-xs text-slate-400 dark:text-slate-500">
-                      = {paraHorasDecimais(it.tempoPosProcessamentoHoras, it.tempoPosProcessamentoMinutos).toLocaleString('pt-BR', { maximumFractionDigits: 2 })} h · vale para o custo de mão de obra
+                      = {paraHorasDecimais(it.tempoPosProcessamentoHoras, it.tempoPosProcessamentoMinutos).toLocaleString('pt-BR', { maximumFractionDigits: 2 })} h do LOTE (não multiplica) · mão de obra
                     </span>
                   </Field>
                 </div>
+
+                {/* Insumos consumidos por UNIDADE desta peca (argola, escovinha...) */}
+                {insumosDisponiveis.length > 0 && (
+                  <div className="mt-3 border-t border-slate-100 pt-3 dark:border-slate-800">
+                    <div className="mb-2 text-xs font-medium text-slate-500 dark:text-slate-400">
+                      Insumos por unidade
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      {insumosDisponiveis.map((ins) => {
+                        const sel = it.insumosSelecionados.find((x) => x.insumoId === String(ins.id));
+                        const ativo = !!sel;
+                        return (
+                          <div
+                            key={ins.id}
+                            className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition ${
+                              ativo
+                                ? 'border-transparent bg-brand-gradient text-white shadow-glow'
+                                : 'border-slate-200 bg-white/70 text-slate-600 hover:border-brand-300 hover:text-slate-900 dark:border-slate-700 dark:bg-slate-800/60 dark:text-slate-300 dark:hover:border-brand-500'
+                            }`}
+                          >
+                            <button type="button" onClick={() => alternarInsumoItem(idx, ins.id)} className="flex items-center gap-1.5">
+                              <span
+                                className={`inline-block h-3.5 w-3.5 rounded-[4px] border text-center text-[9px] leading-[13px] ${
+                                  ativo ? 'border-white/70 bg-white/20' : 'border-slate-300 dark:border-slate-600'
+                                }`}
+                              >
+                                {ativo ? '✓' : ''}
+                              </span>
+                              {ins.nome}
+                              <span className={ativo ? 'text-white/80' : 'text-slate-400 dark:text-slate-500'}>{fmt(ins.valorUnitario)}</span>
+                            </button>
+                            {ativo && (
+                              <>
+                                <span className={ativo ? 'text-white/70' : 'text-slate-400'}>×</span>
+                                <input
+                                  type="number"
+                                  min="1"
+                                  step="1"
+                                  value={sel!.quantidade}
+                                  onChange={(e) => setInsumoQuantidade(idx, ins.id, e.target.value)}
+                                  className="w-10 rounded-md border-0 bg-white/20 px-1 py-0.5 text-center text-white [color-scheme:dark] focus:outline-none focus:ring-1 focus:ring-white/50"
+                                  title="Quantidade deste insumo por unidade da peça"
+                                />
+                              </>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
               </div>
             ))}
           </div>
@@ -636,14 +769,21 @@ export function SimuladorPage() {
                     <div>
                       <div className="font-medium text-slate-700 dark:text-slate-200">
                         {it.nome || `Peça ${idx + 1}`}
+                        {it.quantidade > 1 && (
+                          <span className="ml-1 font-normal text-slate-400 dark:text-slate-500">× {it.quantidade}</span>
+                        )}
                       </div>
                       <div className="text-xs text-slate-500 dark:text-slate-400">
-                        {material ? rotuloMaterial(material) : '—'} · peso {it.pesoG.toLocaleString('pt-BR')} g
+                        {material ? rotuloMaterial(material) : '—'} · peso {it.pesoG.toLocaleString('pt-BR')} g/un.
                         {estoque && desperdicio > 0 && (
                           <> · consumo {estoque.consumoG.toLocaleString('pt-BR', { maximumFractionDigits: 1 })} g (+{pct(desperdicio)} desperdício do material)</>
                         )}
+                        {it.custoInsumos > 0 && <> · insumos {fmt(it.custoInsumos)}</>}
                         {estoque && !estoque.estoqueSuficiente && (
-                          <span className="ml-2 text-amber-600">(estoque insuficiente)</span>
+                          <span className="ml-2 text-amber-600">(material insuficiente)</span>
+                        )}
+                        {estoque?.insumos.some((x) => !x.estoqueSuficiente) && (
+                          <span className="ml-2 text-amber-600">(insumo insuficiente)</span>
                         )}
                       </div>
                     </div>
@@ -663,6 +803,9 @@ export function SimuladorPage() {
               <Linha rotulo="Depreciação" valor={r.custos.depreciacao} fmt={fmt} />
               <Linha rotulo="Mão de obra" valor={r.custos.maoDeObra} fmt={fmt} />
               <Linha rotulo="Custo fixo rateado" valor={r.custos.custoFixoRateado} fmt={fmt} />
+              {r.custos.custoInsumos > 0 && (
+                <Linha rotulo="Insumos" valor={r.custos.custoInsumos} fmt={fmt} />
+              )}
               {r.custos.custoVariavel > 0 && (
                 <Linha rotulo="Custos variáveis" valor={r.custos.custoVariavel} fmt={fmt} />
               )}

@@ -6,17 +6,24 @@
  * sistema, isolado para ser testado exaustivamente.
  *
  * Formulas (ver especificacao, secao 3):
- *   Custo Material     = (pesoG * precoKg / 1000) * (1 + taxaDesperdicio)
+ *   Custo Material     = (pesoG * precoKg / 1000) * (1 + taxaDesperdicio) * quantidade
  *   Custo Energia      = (potenciaW / 1000) * tempoImpressaoH * precoKwh
  *   Depreciacao        = (valorAquisicao / vidaUtilH) * tempoImpressaoH
  *   Mao de Obra        = tempoPosProcessamentoH * valorHoraTrabalho
  *   Custo Fixo/Hora    = custosFixosMensais / horasProdutivasMes
  *   Custo Fixo Rateado = Custo Fixo/Hora * tempoImpressaoH
+ *   Custo Insumos      = soma(insumo.valorUnitario * insumo.quantidade) * quantidade
  *   Custo Total        = soma dos acima
  *   Custo c/ Falha     = Custo Total * (1 + taxaFalha)
  *   Preco (bruto)      = Custo c/ Falha * (1 + margemLucro)
  *   Preco Final        = arredondamento(Preco bruto)
  *   Preco Cobrado      = Preco Final - desconto (desconto so sobre o final)
+ *
+ * `quantidade` e' o numero de unidades identicas que uma peca representa
+ * (ex.: 25 canudos impressos juntos na mesma leva). So' os componentes que
+ * escalam por UNIDADE fisica (material, insumos) multiplicam por ela — tempo
+ * de impressao/pos-processamento (e por consequencia energia, depreciacao,
+ * custo fixo rateado e mao de obra) sao do LOTE inteiro, nao de uma unidade.
  */
 import { z } from 'zod';
 import { arredondarN, aplicarArredondamento, type EstrategiaArredondamento } from './money.js';
@@ -38,6 +45,8 @@ export interface DetalhamentoCustos {
   custoFixoRateado: number;
   /** Soma dos custos variaveis por peca selecionados (embalagem, frete...). */
   custoVariavel: number;
+  /** Soma dos insumos usados (por unidade * quantidade) de todas as pecas. */
+  custoInsumos: number;
   /** Soma dos componentes acima. */
   custoTotal: number;
   /** Custo total ja acrescido da provisao de falha. */
@@ -99,13 +108,14 @@ export class ErroValidacaoPrecificacao extends Error {
   }
 }
 
-/** Os 5 componentes de custo LINEARES de uma peca (sem markup, sem arredondar). */
+/** Os 6 componentes de custo LINEARES de uma peca (sem markup, sem arredondar). */
 interface ComponentesCustoPeca {
   custoMaterial: number;
   custoEnergia: number;
   depreciacao: number;
   maoDeObra: number;
   custoFixoRateado: number;
+  custoInsumos: number;
 }
 
 type PecaEntrada = EntradaPrecificacao['peca'];
@@ -115,11 +125,17 @@ type CustosEntrada = EntradaPrecificacao['custos'];
 type ParametrosEntrada = EntradaPrecificacao['parametros'];
 
 /**
- * Calcula os 5 componentes de custo de UMA peca. Todos sao funcoes lineares
- * dos dados de entrada — por isso somar os componentes de varias pecas e
- * so' entao aplicar taxaFalha/margemLucro (uma vez) da o mesmo resultado que
- * aplicar por peca e somar depois. E' o que permite `calcularMultiplo`
- * reaproveitar esta funcao sem duplicar a matematica.
+ * Calcula os componentes de custo de UMA peca (linha do orcamento, que pode
+ * representar varias unidades identicas via `peca.quantidade`). Todos sao
+ * funcoes lineares dos dados de entrada — por isso somar os componentes de
+ * varias pecas e so' entao aplicar taxaFalha/margemLucro (uma vez) da o mesmo
+ * resultado que aplicar por peca e somar depois. E' o que permite
+ * `calcularMultiplo` reaproveitar esta funcao sem duplicar a matematica.
+ *
+ * `quantidade` multiplica APENAS o que escala por unidade fisica (material,
+ * insumos). Tempo de impressao/pos-processamento — e por consequencia
+ * energia, depreciacao, custo fixo rateado e mao de obra — sao do LOTE
+ * inteiro (a impressora produz as `quantidade` unidades numa unica leva).
  */
 function calcularComponentesPeca(
   peca: PecaEntrada,
@@ -127,7 +143,9 @@ function calcularComponentesPeca(
   impressora: ImpressoraEntrada,
   custos: Pick<CustosEntrada, 'precoKwh' | 'valorHoraTrabalho' | 'custosFixosMensais' | 'horasProdutivasMes'>,
 ): ComponentesCustoPeca {
-  const custoMaterial = ((peca.pesoG * material.precoKg) / 1000) * (1 + material.taxaDesperdicio);
+  const quantidade = peca.quantidade;
+  const custoMaterial =
+    ((peca.pesoG * material.precoKg) / 1000) * (1 + material.taxaDesperdicio) * quantidade;
   const custoEnergia = (impressora.potenciaW / 1000) * peca.tempoImpressaoH * custos.precoKwh;
   const depreciacao = (impressora.valorAquisicao / impressora.vidaUtilH) * peca.tempoImpressaoH;
   const maoDeObra = peca.tempoPosProcessamentoH * custos.valorHoraTrabalho;
@@ -135,8 +153,9 @@ function calcularComponentesPeca(
   // multiplicado pelo tempo de impressao da peca (nao por peca/mes).
   const custoFixoPorHora = custos.custosFixosMensais / custos.horasProdutivasMes;
   const custoFixoRateado = custoFixoPorHora * peca.tempoImpressaoH;
+  const custoInsumos = peca.insumos.reduce((s, i) => s + i.valorUnitario * i.quantidade, 0) * quantidade;
 
-  return { custoMaterial, custoEnergia, depreciacao, maoDeObra, custoFixoRateado };
+  return { custoMaterial, custoEnergia, depreciacao, maoDeObra, custoFixoRateado, custoInsumos };
 }
 
 /**
@@ -208,7 +227,13 @@ export function calcular(entrada: EntradaPrecificacao): ResultadoPrecificacao {
   const c = calcularComponentesPeca(peca, material, impressora, custos);
   const custoVariavel = custos.custoVariavel;
   const custoTotal =
-    c.custoMaterial + c.custoEnergia + c.depreciacao + c.maoDeObra + c.custoFixoRateado + custoVariavel;
+    c.custoMaterial +
+    c.custoEnergia +
+    c.depreciacao +
+    c.maoDeObra +
+    c.custoFixoRateado +
+    c.custoInsumos +
+    custoVariavel;
 
   const { custoComFalha, ...resto } = finalizarPreco(
     custoTotal,
@@ -227,6 +252,7 @@ export function calcular(entrada: EntradaPrecificacao): ResultadoPrecificacao {
       maoDeObra: arredondarN(c.maoDeObra, 4),
       custoFixoRateado: arredondarN(c.custoFixoRateado, 4),
       custoVariavel: arredondarN(custoVariavel, 4),
+      custoInsumos: arredondarN(c.custoInsumos, 4),
       custoTotal: arredondarN(custoTotal, 4),
       custoComFalha,
     },
@@ -255,12 +281,15 @@ export function precificar(
 export interface DetalhamentoItemCusto {
   nome?: string;
   pesoG: number;
+  /** Unidades identicas que esta peca representa (ver `calcularComponentesPeca`). */
+  quantidade: number;
   custoMaterial: number;
   custoEnergia: number;
   depreciacao: number;
   maoDeObra: number;
   custoFixoRateado: number;
-  /** Soma dos 5 componentes acima (sem custo variavel, sem markup). */
+  custoInsumos: number;
+  /** Soma dos componentes acima (sem custo variavel do orcamento, sem markup). */
   custoItemTotal: number;
 }
 
@@ -279,15 +308,18 @@ export interface ResultadoPrecificacaoMultipla extends ResultadoPrecificacao {
 export function calcularMultiplo(entrada: EntradaPrecificacaoMultipla): ResultadoPrecificacaoMultipla {
   const itens: DetalhamentoItemCusto[] = entrada.itens.map((it) => {
     const c = calcularComponentesPeca(it.peca, it.material, entrada.impressora, entrada.custos);
-    const custoItemTotal = c.custoMaterial + c.custoEnergia + c.depreciacao + c.maoDeObra + c.custoFixoRateado;
+    const custoItemTotal =
+      c.custoMaterial + c.custoEnergia + c.depreciacao + c.maoDeObra + c.custoFixoRateado + c.custoInsumos;
     return {
       ...(it.nome ? { nome: it.nome } : {}),
       pesoG: it.peca.pesoG,
+      quantidade: it.peca.quantidade,
       custoMaterial: arredondarN(c.custoMaterial, 4),
       custoEnergia: arredondarN(c.custoEnergia, 4),
       depreciacao: arredondarN(c.depreciacao, 4),
       maoDeObra: arredondarN(c.maoDeObra, 4),
       custoFixoRateado: arredondarN(c.custoFixoRateado, 4),
+      custoInsumos: arredondarN(c.custoInsumos, 4),
       custoItemTotal: arredondarN(custoItemTotal, 4),
     };
   });
@@ -315,6 +347,7 @@ export function calcularMultiplo(entrada: EntradaPrecificacaoMultipla): Resultad
     maoDeObra: arredondarN(itens.reduce((s, i) => s + i.maoDeObra, 0), 4),
     custoFixoRateado: arredondarN(itens.reduce((s, i) => s + i.custoFixoRateado, 0), 4),
     custoVariavel: arredondarN(custoVariavel, 4),
+    custoInsumos: arredondarN(itens.reduce((s, i) => s + i.custoInsumos, 0), 4),
     custoTotal: arredondarN(custoTotal, 4),
     custoComFalha,
   };

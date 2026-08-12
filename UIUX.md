@@ -1,4 +1,4 @@
-# Guia de UI/UX — 3D Price Pro
+# Guia de UI/UX — Price 3D
 
 Diretrizes do visual moderno do frontend. O objetivo é uma aparência de
 **SaaS limpo e atual** (superfícies de vidro, sombras suaves, realces em

@@ -335,3 +335,68 @@ describe('calcularMultiplo (orcamento com varias pecas)', () => {
     expect(() => precificarMultiplo(entradaMultiplaBase({ itens: [] }))).toThrow(ErroValidacaoPrecificacao);
   });
 });
+
+describe('quantidade e insumos por peca', () => {
+  it('quantidade default e 1 quando omitida (compatibilidade retroativa)', () => {
+    const r = precificarMultiplo(entradaMultiplaBase());
+    expect(r.itens[0]!.quantidade).toBe(1);
+    expect(r.custos.custoInsumos).toBe(0);
+  });
+
+  it('quantidade multiplica material e insumos, mas NAO tempo/energia/deprec./mao de obra', () => {
+    // 25 unidades de uma peca de 5g, sem desperdicio, com 1 argola (0.07) e
+    // 1 escovinha (0.05) cada. Tempo de impressao/pos-processamento e' do
+    // LOTE inteiro (nao escala).
+    const r = precificarMultiplo(
+      entradaMultiplaBase({
+        itens: [
+          {
+            nome: 'Canudo',
+            peca: {
+              pesoG: 5,
+              tempoImpressaoH: 2,
+              tempoPosProcessamentoH: 1,
+              quantidade: 25,
+              insumos: [
+                { valorUnitario: 0.07, quantidade: 1 },
+                { valorUnitario: 0.05, quantidade: 1 },
+              ],
+            },
+            material: { precoKg: 100, taxaDesperdicio: 0 },
+          },
+        ],
+        custos: { precoKwh: 1, valorHoraTrabalho: 20, custosFixosMensais: 0, horasProdutivasMes: 160 },
+        parametros: { taxaFalha: 0, margemLucro: 0, margemMinima: 0 },
+      }),
+    );
+    const item = r.itens[0]!;
+    expect(item.custoMaterial).toBeCloseTo(12.5, 4); // (5*100/1000) * 25
+    expect(item.custoInsumos).toBeCloseTo(3, 4); // (0.07+0.05) * 25
+    expect(item.custoEnergia).toBeCloseTo(0.4, 4); // (200/1000)*2*1 — nao multiplica
+    expect(item.depreciacao).toBeCloseTo(2, 4); // (2000/2000)*2 — nao multiplica
+    expect(item.maoDeObra).toBeCloseTo(20, 4); // 1*20 — nao multiplica
+    expect(item.custoItemTotal).toBeCloseTo(37.9, 4);
+  });
+
+  it('insumos de varias pecas somam no custoInsumos agregado', () => {
+    const peca = (qtd: number) => ({
+      peca: {
+        pesoG: 5,
+        tempoImpressaoH: 1,
+        tempoPosProcessamentoH: 0,
+        quantidade: qtd,
+        insumos: [{ valorUnitario: 0.1, quantidade: 1 }],
+      },
+      material: { precoKg: 100, taxaDesperdicio: 0 },
+    });
+    const r = precificarMultiplo(
+      entradaMultiplaBase({
+        itens: [peca(10), peca(5)],
+        custos: { precoKwh: 0, valorHoraTrabalho: 0, custosFixosMensais: 0, horasProdutivasMes: 160 },
+        parametros: { taxaFalha: 0, margemLucro: 0, margemMinima: 0 },
+      }),
+    );
+    // 10 unidades * 0.10 + 5 unidades * 0.10 = 1.50
+    expect(r.custos.custoInsumos).toBeCloseTo(1.5, 4);
+  });
+});

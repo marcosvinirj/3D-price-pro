@@ -24,11 +24,13 @@ function formatar(valorBase: number, moeda: MoedaPdf) {
 /**
  * Rotulo de uma peca no PDF: nome + so' a COR do filamento — nunca marca,
  * tipo/tecnologia do material, marca/modelo da impressora ou peso (o
- * cliente nao precisa desses detalhes tecnicos).
+ * cliente nao precisa desses detalhes tecnicos). Mostra a quantidade quando
+ * maior que 1, ja que o VALOR ao lado e' o total das unidades, nao de uma so'.
  */
-function rotuloItem(it: { nome: string | null; material: { cor: string | null } }): string {
+function rotuloItem(it: { nome: string | null; quantidade: number; material: { cor: string | null } }): string {
   const nome = it.nome ?? 'Peça';
-  return it.material.cor ? `${nome} — ${it.material.cor}` : nome;
+  const comCor = it.material.cor ? `${nome} — ${it.material.cor}` : nome;
+  return it.quantidade > 1 ? `${comCor} (${it.quantidade} un.)` : comCor;
 }
 
 const TINTA = rgb(0.04, 0.04, 0.04);

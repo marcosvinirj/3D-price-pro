@@ -36,7 +36,7 @@ export function LoginPage() {
             <Logo tamanho={32} />
           </div>
           <h1 className="text-2xl font-bold tracking-tight text-slate-800 dark:text-slate-100">
-            3D Price <span className="text-gradient">Pro</span>
+            Price <span className="text-gradient">3D</span>
           </h1>
           <p className="text-sm text-slate-500 dark:text-slate-400">
             {modo === 'login' ? 'Entre na sua conta' : 'Crie sua conta'}

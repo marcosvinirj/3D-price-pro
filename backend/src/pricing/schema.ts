@@ -48,12 +48,34 @@ export const descontoSchema = z.discriminatedUnion('tipo', [
   z.object({ tipo: z.literal('valor'), valor: naoNegativo }),
 ]);
 
+/** Inteiro >= 1 (quantidade de unidades). */
+export const inteiroPositivo = z
+  .number({ invalid_type_error: 'Deve ser um numero' })
+  .int('Deve ser um numero inteiro')
+  .positive('Deve ser maior que zero');
+
+/**
+ * Um insumo consumido POR UNIDADE da peca (ex.: 1 argola por canudo). O
+ * consumo total no orcamento e' `quantidade` (deste insumo, por peca) vezes a
+ * quantidade de pecas do item — ver `calcularComponentesPeca`.
+ */
+export const insumoUsadoSchema = z.object({
+  valorUnitario: naoNegativo,
+  quantidade: inteiroPositivo,
+});
+
 export const entradaPrecificacaoSchema = z
   .object({
     peca: z.object({
       pesoG: positivo,
       tempoImpressaoH: naoNegativo,
       tempoPosProcessamentoH: naoNegativo,
+      /** Unidades identicas que esta peca representa (25 canudos = 25). Peso
+       *  e insumos escalam por ela; tempo de impressao/pos-processamento NAO
+       *  (sao do lote inteiro). */
+      quantidade: inteiroPositivo.default(1),
+      /** Insumos usados por unidade da peca (argola, escovinha, saco zip...). */
+      insumos: z.array(insumoUsadoSchema).default([]),
     }),
     material: z.object({
       precoKg: naoNegativo,
@@ -114,6 +136,8 @@ const itemPrecificacaoSchema = z.object({
     pesoG: positivo,
     tempoImpressaoH: naoNegativo,
     tempoPosProcessamentoH: naoNegativo,
+    quantidade: inteiroPositivo.default(1),
+    insumos: z.array(insumoUsadoSchema).default([]),
   }),
   material: z.object({
     precoKg: naoNegativo,

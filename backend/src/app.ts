@@ -8,6 +8,7 @@ import { materiaisRouter } from './modules/materiais/routes.js';
 import { impressorasRouter } from './modules/impressoras/routes.js';
 import { custosFixosRouter } from './modules/custosFixos/routes.js';
 import { custosVariaveisRouter } from './modules/custosVariaveis/routes.js';
+import { insumosRouter } from './modules/insumos/routes.js';
 import { configuracaoRouter } from './modules/configuracao/routes.js';
 import { orcamentosRouter } from './modules/orcamentos/routes.js';
 import { dashboardRouter } from './modules/dashboard/routes.js';
@@ -31,6 +32,7 @@ export function criarApp() {
   app.use('/impressoras', autenticar, impressorasRouter);
   app.use('/custos-fixos', autenticar, custosFixosRouter);
   app.use('/custos-variaveis', autenticar, custosVariaveisRouter);
+  app.use('/insumos', autenticar, insumosRouter);
   app.use('/configuracao', autenticar, configuracaoRouter);
   app.use('/moedas', autenticar, moedasRouter);
   app.use('/orcamentos', autenticar, orcamentosRouter);
