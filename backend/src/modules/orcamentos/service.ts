@@ -27,8 +27,9 @@ const itemInputSchema = z.object({
   pesoG: z.number().positive(),
   tempoImpressaoH: z.number().nonnegative(),
   tempoPosProcessamentoH: z.number().nonnegative(),
-  /** Unidades identicas que esta peca representa (25 canudos = 25). Peso e
-   *  insumos escalam por ela; tempo de impressao/pos-processamento NAO. */
+  /** Unidades identicas que esta peca representa (25 canudos = 25). So' os
+   *  insumos escalam por ela; peso/consumo de filamento e tempo de
+   *  impressao/pos-processamento NAO (peso e' o total gasto na peca). */
   quantidade: z.number().int().positive().default(1),
   insumos: z.array(itemInsumoInputSchema).optional(),
 });
@@ -155,9 +156,10 @@ async function montarCalculo(input: OrcamentoInput, usuarioId: number) {
 
   const itensCalculados: ItemCalculado[] = input.itens.map((it, idx) => {
     const m = materiaisPorId.get(it.materialId)!;
-    // Consumo de material tambem escala pela quantidade — cada unidade da
-    // peca gasta seu proprio material.
-    const consumoG = it.pesoG * (1 + m.taxaDesperdicio) * it.quantidade;
+    // Consumo de material e' o total gasto informado para a peca — calculo
+    // por grama de filamento gasto, NAO escala por quantidade (so' insumos
+    // escalam — ver InsumoUsadoCalculado abaixo).
+    const consumoG = it.pesoG * (1 + m.taxaDesperdicio);
     const insumosUsados: InsumoUsadoCalculado[] = (it.insumos ?? []).map((iu) => {
       const ins = insumosPorId.get(iu.insumoId)!;
       return {

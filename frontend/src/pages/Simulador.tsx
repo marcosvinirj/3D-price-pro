@@ -541,7 +541,7 @@ export function SimuladorPage() {
                       ))}
                     </Select>
                   </Field>
-                  <Field label="Peso (g) — de 1 unidade">
+                  <Field label="Peso (g)">
                     <Input type="number" min="0" step="0.1" value={it.pesoG} onChange={(e) => setItem(idx, 'pesoG', e.target.value)} />
                   </Field>
                   <Field label="Quantidade">
@@ -553,7 +553,7 @@ export function SimuladorPage() {
                       onChange={(e) => setItem(idx, 'quantidade', e.target.value)}
                     />
                     <span className="mt-1 block text-xs text-slate-400 dark:text-slate-500">
-                      unidades iguais nesta leva — multiplica peso e insumos
+                      unidades iguais nesta leva — multiplica só os insumos
                     </span>
                   </Field>
                 </div>
@@ -774,7 +774,7 @@ export function SimuladorPage() {
                         )}
                       </div>
                       <div className="text-xs text-slate-500 dark:text-slate-400">
-                        {material ? rotuloMaterial(material) : '—'} · peso {it.pesoG.toLocaleString('pt-BR')} g/un.
+                        {material ? rotuloMaterial(material) : '—'} · peso {it.pesoG.toLocaleString('pt-BR')} g
                         {estoque && desperdicio > 0 && (
                           <> · consumo {estoque.consumoG.toLocaleString('pt-BR', { maximumFractionDigits: 1 })} g (+{pct(desperdicio)} desperdício do material)</>
                         )}

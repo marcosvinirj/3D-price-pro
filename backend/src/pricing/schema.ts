@@ -70,9 +70,10 @@ export const entradaPrecificacaoSchema = z
       pesoG: positivo,
       tempoImpressaoH: naoNegativo,
       tempoPosProcessamentoH: naoNegativo,
-      /** Unidades identicas que esta peca representa (25 canudos = 25). Peso
-       *  e insumos escalam por ela; tempo de impressao/pos-processamento NAO
-       *  (sao do lote inteiro). */
+      /** Unidades identicas que esta peca representa (25 canudos = 25). So'
+       *  os insumos escalam por ela; peso/consumo de filamento e tempo de
+       *  impressao/pos-processamento NAO (peso e' o total gasto na peca;
+       *  tempo e' do lote inteiro). */
       quantidade: inteiroPositivo.default(1),
       /** Insumos usados por unidade da peca (argola, escovinha, saco zip...). */
       insumos: z.array(insumoUsadoSchema).default([]),

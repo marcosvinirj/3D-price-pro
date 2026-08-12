@@ -6,7 +6,7 @@
  * sistema, isolado para ser testado exaustivamente.
  *
  * Formulas (ver especificacao, secao 3):
- *   Custo Material     = (pesoG * precoKg / 1000) * (1 + taxaDesperdicio) * quantidade
+ *   Custo Material     = (pesoG * precoKg / 1000) * (1 + taxaDesperdicio)
  *   Custo Energia      = (potenciaW / 1000) * tempoImpressaoH * precoKwh
  *   Depreciacao        = (valorAquisicao / vidaUtilH) * tempoImpressaoH
  *   Mao de Obra        = tempoPosProcessamentoH * valorHoraTrabalho
@@ -20,10 +20,12 @@
  *   Preco Cobrado      = Preco Final - desconto (desconto so sobre o final)
  *
  * `quantidade` e' o numero de unidades identicas que uma peca representa
- * (ex.: 25 canudos impressos juntos na mesma leva). So' os componentes que
- * escalam por UNIDADE fisica (material, insumos) multiplicam por ela — tempo
- * de impressao/pos-processamento (e por consequencia energia, depreciacao,
- * custo fixo rateado e mao de obra) sao do LOTE inteiro, nao de uma unidade.
+ * (ex.: 25 canudos impressos juntos na mesma leva) e multiplica SO' os
+ * insumos (argola, escovinha...). Peso/consumo de filamento e' o total gasto
+ * informado para a peca — calculo por grama de filamento gasto, nao escala
+ * por unidade. Tempo de impressao/pos-processamento (e por consequencia
+ * energia, depreciacao, custo fixo rateado e mao de obra) sao do LOTE
+ * inteiro, nao de uma unidade.
  */
 import { z } from 'zod';
 import { arredondarN, aplicarArredondamento, type EstrategiaArredondamento } from './money.js';
@@ -132,10 +134,11 @@ type ParametrosEntrada = EntradaPrecificacao['parametros'];
  * resultado que aplicar por peca e somar depois. E' o que permite
  * `calcularMultiplo` reaproveitar esta funcao sem duplicar a matematica.
  *
- * `quantidade` multiplica APENAS o que escala por unidade fisica (material,
- * insumos). Tempo de impressao/pos-processamento — e por consequencia
- * energia, depreciacao, custo fixo rateado e mao de obra — sao do LOTE
- * inteiro (a impressora produz as `quantidade` unidades numa unica leva).
+ * `quantidade` multiplica APENAS os insumos (argola, escovinha...). Peso/
+ * consumo de filamento e' o total gasto informado para a peca (nao escala
+ * por `quantidade` — calculo por grama de filamento gasto, como sempre foi).
+ * Tempo de impressao/pos-processamento — e por consequencia energia,
+ * depreciacao, custo fixo rateado e mao de obra — sao do LOTE inteiro.
  */
 function calcularComponentesPeca(
   peca: PecaEntrada,
@@ -143,9 +146,7 @@ function calcularComponentesPeca(
   impressora: ImpressoraEntrada,
   custos: Pick<CustosEntrada, 'precoKwh' | 'valorHoraTrabalho' | 'custosFixosMensais' | 'horasProdutivasMes'>,
 ): ComponentesCustoPeca {
-  const quantidade = peca.quantidade;
-  const custoMaterial =
-    ((peca.pesoG * material.precoKg) / 1000) * (1 + material.taxaDesperdicio) * quantidade;
+  const custoMaterial = ((peca.pesoG * material.precoKg) / 1000) * (1 + material.taxaDesperdicio);
   const custoEnergia = (impressora.potenciaW / 1000) * peca.tempoImpressaoH * custos.precoKwh;
   const depreciacao = (impressora.valorAquisicao / impressora.vidaUtilH) * peca.tempoImpressaoH;
   const maoDeObra = peca.tempoPosProcessamentoH * custos.valorHoraTrabalho;
@@ -153,7 +154,7 @@ function calcularComponentesPeca(
   // multiplicado pelo tempo de impressao da peca (nao por peca/mes).
   const custoFixoPorHora = custos.custosFixosMensais / custos.horasProdutivasMes;
   const custoFixoRateado = custoFixoPorHora * peca.tempoImpressaoH;
-  const custoInsumos = peca.insumos.reduce((s, i) => s + i.valorUnitario * i.quantidade, 0) * quantidade;
+  const custoInsumos = peca.insumos.reduce((s, i) => s + i.valorUnitario * i.quantidade, 0) * peca.quantidade;
 
   return { custoMaterial, custoEnergia, depreciacao, maoDeObra, custoFixoRateado, custoInsumos };
 }
