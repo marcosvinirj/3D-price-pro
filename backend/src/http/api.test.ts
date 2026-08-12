@@ -1,9 +1,10 @@
 /**
- * Testes de integracao da API (Express + Prisma + SQLite de teste).
+ * Testes de integracao da API (Express + Prisma + Postgres de teste).
  *
  * Exercitam ponta a ponta as regras de negocio que dependem de persistencia
  * (2, 4, 5, 6) e as garantias de autorizacao (papeis nas escritas + registro
- * fechado). Rodam contra prisma/test.db, recriado pelo globalSetup.
+ * fechado). Rodam contra um banco Postgres de teste separado (mesmo projeto
+ * Neon do DATABASE_URL, banco "<nome>_test"), recriado pelo globalSetup.
  */
 import request from 'supertest';
 import { beforeEach, describe, expect, it } from 'vitest';
@@ -53,14 +54,27 @@ beforeEach(async () => {
     }),
   ]);
 
+  // materialId/impressoraId/configuracao pertencem ao OPERADOR — e' quem
+  // roda os cenarios de negocio (Regra 2/4/5/6) abaixo. O admin e' um
+  // tenant INDEPENDENTE (multi-tenant: sem papel privilegiado sobre dados
+  // alheios — ver describe "Isolamento multi-tenant"), nao um superior do
+  // operador dentro do mesmo espaco.
   await prisma.configuracao.create({
-    data: { id: 1, precoKwh: 1, valorHoraTrabalho: 20, horasProdutivasMes: 160, margemMinima: 0.2 },
+    data: { usuarioId: operador.id, precoKwh: 1, valorHoraTrabalho: 20, horasProdutivasMes: 160, margemMinima: 0.2 },
   });
   const material = await prisma.material.create({
-    data: { nome: 'PLA', tipo: 'PLA', precoKg: 120, estoqueG: 100, estoqueMinimoG: 10, taxaDesperdicio: 0.05 },
+    data: {
+      usuarioId: operador.id,
+      nome: 'PLA',
+      tipo: 'PLA',
+      precoKg: 120,
+      estoqueG: 100,
+      estoqueMinimoG: 10,
+      taxaDesperdicio: 0.05,
+    },
   });
   const impressora = await prisma.impressora.create({
-    data: { nome: 'Ender 3', potenciaW: 200, valorAquisicao: 2000, vidaUtilH: 2000 },
+    data: { usuarioId: operador.id, nome: 'Ender 3', potenciaW: 200, valorAquisicao: 2000, vidaUtilH: 2000 },
   });
 
   ctx = {
@@ -71,30 +85,39 @@ beforeEach(async () => {
   };
 });
 
-/** Entrada padrao de orcamento (peso 50g => consumo 52.5g com 5% de desperdicio). */
-function inputOrcamento(over: Record<string, unknown> = {}) {
+/** Entrada padrao de orcamento com 1 peca (peso 50g => consumo 52.5g com 5% de
+ *  desperdicio). `peca` mescla no item unico; demais chaves vao no orcamento. */
+function inputOrcamento(over: { peca?: Record<string, unknown>; [k: string]: unknown } = {}) {
+  const { peca, ...resto } = over;
   return {
-    materialId: ctx.materialId,
     impressoraId: ctx.impressoraId,
-    peca: { pesoG: 50, tempoImpressaoH: 4, tempoPosProcessamentoH: 0.5 },
+    itens: [
+      { materialId: ctx.materialId, pesoG: 50, tempoImpressaoH: 4, tempoPosProcessamentoH: 0.5, ...peca },
+    ],
     parametros: { taxaFalha: 0.1, margemLucro: 0.5 },
-    ...over,
+    ...resto,
   };
 }
 
 const auth = (token: string) => ({ Authorization: `Bearer ${token}` });
 
-describe('Autorizacao (papeis nas escritas)', () => {
+// Nao ha mais papeis privilegiados (regra de negocio atual — ver README,
+// secao "Multi-tenant"): `role` no User e' vestigial (so' controla o
+// bootstrap e quem PODE escolher o papel de quem se registra). Qualquer
+// usuario autenticado tem acesso total (leitura e escrita) ao que e' SEU;
+// o isolamento e' por `usuarioId`, nao por `role`.
+describe('Acesso autenticado (sem papel privilegiado sobre os PROPRIOS dados)', () => {
   it('operador LE materiais (200)', async () => {
     await request(app).get('/materiais').set(auth(ctx.tokenOperador)).expect(200);
   });
 
-  it('operador NAO pode criar material (403)', async () => {
+  it('operador cria e edita material e configuracao normalmente (nao ha restricao por papel)', async () => {
     await request(app)
       .post('/materiais')
       .set(auth(ctx.tokenOperador))
       .send({ nome: 'X', tipo: 'PLA', precoKg: 10 })
-      .expect(403);
+      .expect(201);
+    await request(app).patch('/configuracao').set(auth(ctx.tokenOperador)).send({ precoKwh: 2 }).expect(200);
   });
 
   it('admin pode criar material (201)', async () => {
@@ -108,33 +131,65 @@ describe('Autorizacao (papeis nas escritas)', () => {
   it('sem token: 401', async () => {
     await request(app).get('/materiais').expect(401);
   });
+});
 
-  it('operador NAO pode alterar configuracao (403); admin pode (200)', async () => {
-    await request(app).patch('/configuracao').set(auth(ctx.tokenOperador)).send({ precoKwh: 2 }).expect(403);
-    await request(app).patch('/configuracao').set(auth(ctx.tokenAdmin)).send({ precoKwh: 2 }).expect(200);
+describe('Isolamento multi-tenant (cada usuario so acessa o proprio espaco)', () => {
+  it('usuario nao ve, edita nem remove material de outro usuario (404, nao 200 com dado alheio)', async () => {
+    const material = await request(app)
+      .post('/materiais')
+      .set(auth(ctx.tokenAdmin))
+      .send({ nome: 'Exclusivo do admin', tipo: 'PLA', precoKg: 99 })
+      .expect(201);
+
+    await request(app).get(`/materiais/${material.body.id}`).set(auth(ctx.tokenOperador)).expect(404);
+    await request(app)
+      .patch(`/materiais/${material.body.id}`)
+      .set(auth(ctx.tokenOperador))
+      .send({ precoKg: 1 })
+      .expect(404);
+    await request(app).delete(`/materiais/${material.body.id}`).set(auth(ctx.tokenOperador)).expect(404);
+
+    const lista = await request(app).get('/materiais').set(auth(ctx.tokenOperador)).expect(200);
+    expect(lista.body.some((m: { id: number }) => m.id === material.body.id)).toBe(false);
+  });
+
+  it('orcamento nao pode usar material de outro usuario (material tratado como inexistente)', async () => {
+    const materialDoAdmin = await request(app)
+      .post('/materiais')
+      .set(auth(ctx.tokenAdmin))
+      .send({ nome: 'So do admin', tipo: 'PLA', precoKg: 50 })
+      .expect(201);
+
+    await request(app)
+      .post('/orcamentos')
+      .set(auth(ctx.tokenOperador))
+      .send(inputOrcamento({ peca: { materialId: materialDoAdmin.body.id, pesoG: 50, tempoImpressaoH: 4, tempoPosProcessamentoH: 0.5 } }))
+      .expect(404);
   });
 });
 
-describe('Registro de usuarios (fechado apos bootstrap)', () => {
-  it('registro publico sem token e recusado quando ja ha usuarios (401)', async () => {
-    await request(app).post('/auth/registro').send({ email: 'x@x.com', senha: 'senha1234' }).expect(401);
+describe('Registro de usuarios (auto-cadastro publico; role so' + " respeitado se quem chama ja' e' admin)", () => {
+  it('registro publico sem token funciona mesmo com usuarios existentes (201)', async () => {
+    const r = await request(app).post('/auth/registro').send({ email: 'x@x.com', senha: 'senha1234' }).expect(201);
+    expect(r.body.usuario.role).toBe('operador'); // auto-cadastro sempre vira operador
   });
 
-  it('operador nao pode registrar usuarios (403)', async () => {
-    await request(app)
+  it('role pedido por quem NAO esta autenticado como admin e ignorado (vira operador mesmo assim)', async () => {
+    const r = await request(app)
       .post('/auth/registro')
       .set(auth(ctx.tokenOperador))
-      .send({ email: 'y@y.com', senha: 'senha1234' })
-      .expect(403);
+      .send({ email: 'y@y.com', senha: 'senha1234', role: 'admin' })
+      .expect(201);
+    expect(r.body.usuario.role).toBe('operador');
   });
 
-  it('admin registra operador por padrao (201)', async () => {
+  it('admin autenticado pode escolher o papel de quem registra', async () => {
     const r = await request(app)
       .post('/auth/registro')
       .set(auth(ctx.tokenAdmin))
       .send({ email: 'novo@y.com', senha: 'senha1234' })
       .expect(201);
-    expect(r.body.usuario.role).toBe('operador');
+    expect(r.body.usuario.role).toBe('operador'); // role omitido => default operador
   });
 
   it('bootstrap: com banco sem usuarios, a 1a conta publica vira admin (201)', async () => {
@@ -208,8 +263,8 @@ describe('Regra 6 — snapshot preserva orcamentos antigos', () => {
     ).body.orcamento;
     const precoOriginal = orc.precoFinal;
 
-    // Admin reajusta o material para o dobro do preco.
-    await request(app).patch(`/materiais/${ctx.materialId}`).set(auth(ctx.tokenAdmin)).send({ precoKg: 240 }).expect(200);
+    // Dono do material reajusta o preco para o dobro.
+    await request(app).patch(`/materiais/${ctx.materialId}`).set(auth(ctx.tokenOperador)).send({ precoKg: 240 }).expect(200);
 
     // O orcamento emitido mantem o preco/resultado do momento da emissao.
     const depois = await request(app).get(`/orcamentos/${orc.id}`).set(auth(ctx.tokenOperador)).expect(200);

@@ -1,11 +1,12 @@
 # Price 3D — Precificação para Impressão 3D
 
-Monorepo. O **backend** (Node + Express + Prisma + SQLite + JWT + Zod) é
-construído em volta de um **motor de cálculo puro e testável** (43 testes:
+Monorepo. O **backend** (Node + Express + Prisma + PostgreSQL + JWT + Zod) é
+construído em volta de um **motor de cálculo puro e testável** (53 testes:
 motor + integração de API). O
 **frontend** (React + Vite + Tailwind) é um SaaS com **sidebar moderna**,
 **tema claro/escuro** (persistido), dashboard, simulador em tempo real e
-CRUD de filamentos, impressoras, custos fixos e **custos variáveis**.
+CRUD de filamentos, impressoras, custos fixos, **custos variáveis** e
+**insumos** (consumíveis por peça, com estoque em unidades).
 
 ```
 Testand/
@@ -31,11 +32,15 @@ Login inicial (do seed): `admin@exemplo.com` / `senha1234`.
 cd backend
 npm install
 npm run db:generate   # gera o Prisma Client
-npm run db:push       # cria o banco SQLite (prisma/dev.db)
+npm run db:push       # sincroniza o schema no Postgres (ver DATABASE_URL em .env)
 npm run seed          # dados iniciais + admin@exemplo.com / senha1234
 npm run dev           # sobe a API em http://localhost:3333 (hot-reload)
 
-npm test              # 43 testes: motor + integração de API (Vitest + supertest)
+npm test              # 53 testes: motor + integração de API (Vitest + supertest);
+                       # a integração roda contra um banco Postgres de TESTE
+                       # separado (mesmo host de DATABASE_URL, banco "<nome>_test",
+                       # criado automaticamente na 1a execução — nunca toca no banco
+                       # de desenvolvimento/produção)
 npm run typecheck     # checagem de tipos (tsc)
 npx tsx src/exemplo.ts  # exemplo do motor isolado
 ```
@@ -52,7 +57,8 @@ Todas as rotas (exceto `/auth/*` e `/health`) exigem header
 | CRUD | `/materiais` | materiais; `GET /materiais/alertas/estoque-baixo` |
 | CRUD | `/impressoras` | impressoras |
 | CRUD | `/custos-fixos` | custos fixos mensais (retorna `totalMensal`) |
-| CRUD | `/custos-variaveis` | custos variáveis por peça (embalagem, frete…); selecionáveis no orçamento |
+| CRUD | `/custos-variaveis` | custos variáveis por orçamento (embalagem, frete…); cobrados uma vez |
+| CRUD | `/insumos` | insumos por PEÇA (argola, escovinha…), com estoque em unidades; `GET /insumos/alertas/estoque-baixo`; o custo escala pela quantidade da peça no orçamento |
 | GET/PATCH | `/configuracao` | parâmetros globais (kWh, hora, horas produtivas/mês, margem mín.) |
 | POST | `/orcamentos/simular` | simulador "e se" (não persiste) |
 | POST | `/orcamentos` | cria orçamento (pendente) |
