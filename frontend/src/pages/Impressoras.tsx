@@ -1,7 +1,8 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { api, ApiError } from '../lib/api';
 import type { Impressora } from '../lib/types';
-import { Alerta, eur, Button, Card, Field, Input } from '../components/ui';
+import { Alerta, Button, Card, Field, Input } from '../components/ui';
+import { useMoeda } from '../lib/moeda';
 
 type FormImp = {
   nome: string;
@@ -28,6 +29,7 @@ const vazio: FormImp = {
 };
 
 export function ImpressorasPage() {
+  const { fmt } = useMoeda();
   const [itens, setItens] = useState<Impressora[]>([]);
   const [form, setForm] = useState<FormImp>(vazio);
   const [editandoId, setEditandoId] = useState<number | null>(null);
@@ -142,6 +144,9 @@ export function ImpressorasPage() {
             </Field>
             <Field label="Custo anual de manutenção (€)">
               <Input type="number" min="0" step="0.01" value={form.custoManutencaoAnual} onChange={(e) => set('custoManutencaoAnual', e.target.value)} />
+              <span className="mt-1 block text-xs text-slate-400 dark:text-slate-500">
+                só registro por enquanto — ainda não entra no cálculo do preço
+              </span>
             </Field>
             <Field label="Taxa média de falha (%)">
               <Input type="number" min="0" max="100" step="1" value={form.taxaFalhaPct} onChange={(e) => set('taxaFalhaPct', e.target.value)} />
@@ -149,7 +154,7 @@ export function ImpressorasPage() {
             {Number(form.valorAquisicao) > 0 && Number(form.vidaUtilH) > 0 && (
               <div className="col-span-2 self-end rounded-xl border border-brand-200 bg-brand-50 px-3 py-2 text-xs text-brand-700 dark:border-brand-500/30 dark:bg-brand-500/10 dark:text-brand-300 md:col-span-1">
                 Depreciação/hora:{' '}
-                <strong>{eur(Number(form.valorAquisicao) / Number(form.vidaUtilH))}</strong>
+                <strong>{fmt(Number(form.valorAquisicao) / Number(form.vidaUtilH))}</strong>
               </div>
             )}
             <div className="col-span-2 flex items-end gap-2 md:col-span-3">
@@ -184,10 +189,10 @@ export function ImpressorasPage() {
                     {[i.marca, i.modelo].filter(Boolean).join(' ') || '—'}
                   </td>
                   <td className="py-2 pr-4 text-slate-600 dark:text-slate-300">{i.potenciaW} W</td>
-                  <td className="py-2 pr-4">{eur(i.valorAquisicao)}</td>
+                  <td className="py-2 pr-4">{fmt(i.valorAquisicao)}</td>
                   <td className="py-2 pr-4 text-slate-600 dark:text-slate-300">{i.vidaUtilH} h</td>
                   <td className="py-2 pr-4 text-slate-600 dark:text-slate-300">
-                    {i.vidaUtilH > 0 ? eur(i.valorAquisicao / i.vidaUtilH) : '—'}
+                    {i.vidaUtilH > 0 ? fmt(i.valorAquisicao / i.vidaUtilH) : '—'}
                   </td>
                   <td className="py-2 pr-4">
                     <div className="flex gap-2">

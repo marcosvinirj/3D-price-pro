@@ -1,9 +1,11 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { api, ApiError } from '../lib/api';
 import type { CustoFixo, RespostaCustosFixos } from '../lib/types';
-import { Alerta, eur, Button, Card, Field, Input } from '../components/ui';
+import { Alerta, Button, Card, Field, Input } from '../components/ui';
+import { useMoeda } from '../lib/moeda';
 
 export function CustosFixosPage() {
+  const { fmt } = useMoeda();
   const [itens, setItens] = useState<CustoFixo[]>([]);
   const [total, setTotal] = useState(0);
   const [nome, setNome] = useState('');
@@ -61,7 +63,7 @@ export function CustosFixosPage() {
         <h1 className="text-lg font-semibold text-slate-800 dark:text-slate-100">Custos fixos mensais</h1>
         <div className="text-right">
           <div className="text-xs text-slate-500 dark:text-slate-400">Total mensal</div>
-          <div className="text-xl font-bold text-slate-800 dark:text-slate-100">{eur(total)}</div>
+          <div className="text-xl font-bold text-slate-800 dark:text-slate-100">{fmt(total)}</div>
         </div>
       </div>
 
@@ -101,7 +103,7 @@ export function CustosFixosPage() {
             {itens.map((c) => (
               <tr key={c.id} className="border-b border-slate-100 dark:border-slate-800">
                 <td className="py-2 pr-4 font-medium text-slate-700 dark:text-slate-200">{c.nome}</td>
-                <td className="py-2 pr-4">{eur(c.valorMensal)}</td>
+                <td className="py-2 pr-4">{fmt(c.valorMensal)}</td>
                 <td className="py-2 pr-4">
                   <div className="flex gap-2">
                     <Button

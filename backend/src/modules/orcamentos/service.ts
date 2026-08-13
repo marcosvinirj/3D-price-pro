@@ -192,7 +192,7 @@ async function montarCalculo(input: OrcamentoInput, usuarioId: number) {
     };
   });
 
-  return { impressora, entradaMotor, resultado, itensCalculados };
+  return { impressora, entradaMotor, resultado, itensCalculados, custosVariaveis };
 }
 
 /** Monta a mensagem de aviso de estoque insuficiente — material e insumos (ou null se tudo ok). */
@@ -262,7 +262,7 @@ export async function simular(
  * NAO baixa estoque aqui — a baixa ocorre na aprovacao (regra 4).
  */
 export async function criarOrcamento(input: OrcamentoInput, usuarioId: number) {
-  const { entradaMotor, resultado, itensCalculados } = await montarCalculo(input, usuarioId);
+  const { entradaMotor, resultado, itensCalculados, custosVariaveis } = await montarCalculo(input, usuarioId);
 
   // Regra 2: nao permitir salvar preco com margem abaixo da minima.
   if (!resultado.margem.atingeMinima) {
@@ -306,9 +306,16 @@ export async function criarOrcamento(input: OrcamentoInput, usuarioId: number) {
           },
         })),
       },
+      custosVariaveisSelecionados: {
+        create: custosVariaveis.map((cv) => ({
+          custoVariavelId: cv.id,
+          valorUnitarioSnapshot: cv.valorUnitario,
+        })),
+      },
     },
     include: {
       itens: { include: { material: true, insumos: { include: { insumo: true } } }, orderBy: { ordem: 'asc' } },
+      custosVariaveisSelecionados: { include: { custoVariavel: true } },
     },
   });
 
@@ -328,7 +335,7 @@ export async function editarOrcamento(id: number, input: OrcamentoInput, usuario
     throw conflito('Somente orcamentos pendentes podem ser editados');
   }
 
-  const { entradaMotor, resultado, itensCalculados } = await montarCalculo(input, usuarioId);
+  const { entradaMotor, resultado, itensCalculados, custosVariaveis } = await montarCalculo(input, usuarioId);
 
   if (!resultado.margem.atingeMinima) {
     throw regraDeNegocio(
@@ -341,9 +348,12 @@ export async function editarOrcamento(id: number, input: OrcamentoInput, usuario
 
   // deleteMany cascata para OrcamentoItemInsumo (onDelete: Cascade no schema).
   // createMany nao suporta relacoes aninhadas (insumos por peca), por isso o
-  // update abaixo recria as pecas via `itens: { create: [...] }`.
-  const [, orcamento] = await prisma.$transaction([
+  // update abaixo recria as pecas via `itens: { create: [...] }`. Custos
+  // variaveis selecionados sao filhos diretos do orcamento (nao de um item),
+  // entao precisam do proprio deleteMany antes de recriar.
+  const [, , orcamento] = await prisma.$transaction([
     prisma.orcamentoItem.deleteMany({ where: { orcamentoId: id } }),
+    prisma.orcamentoCustoVariavel.deleteMany({ where: { orcamentoId: id } }),
     prisma.orcamento.update({
       where: { id },
       data: {
@@ -375,9 +385,16 @@ export async function editarOrcamento(id: number, input: OrcamentoInput, usuario
             },
           })),
         },
+        custosVariaveisSelecionados: {
+          create: custosVariaveis.map((cv) => ({
+            custoVariavelId: cv.id,
+            valorUnitarioSnapshot: cv.valorUnitario,
+          })),
+        },
       },
       include: {
         itens: { include: { material: true, insumos: { include: { insumo: true } } }, orderBy: { ordem: 'asc' } },
+        custosVariaveisSelecionados: { include: { custoVariavel: true } },
       },
     }),
   ]);
@@ -387,8 +404,16 @@ export async function editarOrcamento(id: number, input: OrcamentoInput, usuario
 
 /**
  * Aprova um orcamento: baixa o estoque de CADA peca (regra 4 — nunca
- * negativo; verifica todas antes de baixar qualquer uma) e torna o registro
- * imutavel (regra 5). Idempotencia protegida por status.
+ * negativo) e torna o registro imutavel (regra 5).
+ *
+ * Tudo roda dentro de UMA transacao interativa, e cada baixa usa
+ * `updateMany` com o estoque minimo exigido no proprio WHERE — o banco faz a
+ * checagem-e-baixa como uma operacao so' (`UPDATE ... WHERE estoque >= X`),
+ * sem a brecha de "ler, decidir, escrever" em passos separados que existia
+ * antes (duplo clique em "Aprovar", ou duas aprovacoes simultaneas
+ * disputando o mesmo material/insumo, podiam ambas passar na checagem antes
+ * de qualquer uma escrever). Se qualquer passo falhar, a transacao inteira
+ * desfaz — nada fica parcialmente baixado.
  */
 export async function aprovarOrcamento(id: number, usuarioId: number) {
   const orcamento = await prisma.orcamento.findFirst({
@@ -396,67 +421,64 @@ export async function aprovarOrcamento(id: number, usuarioId: number) {
     include: { itens: { include: { insumos: true } } },
   });
   if (!orcamento) throw naoEncontrado('Orcamento');
+  // Checagem rapida (boa mensagem no caso comum, sem corrida); a checagem
+  // AUTORITATIVA — que realmente impede dupla aprovacao — e' a de dentro da
+  // transacao abaixo.
   if (orcamento.status === 'aprovado') throw conflito('Orcamento ja aprovado (imutavel)');
   if (orcamento.status === 'recusado') throw conflito('Orcamento recusado nao pode ser aprovado');
-
-  const materiais = await prisma.material.findMany({
-    where: { id: { in: orcamento.itens.map((i) => i.materialId) } },
-  });
-  const materiaisPorId = new Map(materiais.map((m) => [m.id, m]));
-
-  const idsInsumos = [...new Set(orcamento.itens.flatMap((it) => it.insumos.map((iu) => iu.insumoId)))];
-  const insumosAtuais = idsInsumos.length ? await prisma.insumo.findMany({ where: { id: { in: idsInsumos } } }) : [];
-  const insumosPorId = new Map(insumosAtuais.map((i) => [i.id, i]));
-
-  // Regra 4: verifica TODAS as pecas (material E insumos) antes de baixar qualquer uma.
-  for (const it of orcamento.itens) {
-    const m = materiaisPorId.get(it.materialId);
-    if (!m) throw naoEncontrado('Material');
-    if (m.estoqueG < it.consumoG) {
-      throw regraDeNegocio(
-        `Estoque insuficiente para "${it.nome ?? m.nome}": precisa de ${it.consumoG.toFixed(
-          1,
-        )}g, ha ${m.estoqueG.toFixed(1)}g.`,
-      );
-    }
-    for (const iu of it.insumos) {
-      const ins = insumosPorId.get(iu.insumoId);
-      if (!ins) throw naoEncontrado('Insumo');
-      const totalUnidades = iu.quantidadePorPeca; // ja' e' o total direto
-      if (ins.estoqueUnidades < totalUnidades) {
-        throw regraDeNegocio(
-          `Estoque insuficiente de "${ins.nome}" para "${it.nome ?? m.nome}": precisa de ${totalUnidades}, ha ${ins.estoqueUnidades}.`,
-        );
-      }
-    }
-  }
 
   // Um mesmo insumo pode ser usado em varias pecas do orcamento — soma antes
   // de baixar, para decrementar cada insumo uma unica vez.
   const decrementosInsumo = new Map<number, number>();
   for (const it of orcamento.itens) {
     for (const iu of it.insumos) {
-      const total = iu.quantidadePorPeca; // ja' e' o total direto
-      decrementosInsumo.set(iu.insumoId, (decrementosInsumo.get(iu.insumoId) ?? 0) + total);
+      decrementosInsumo.set(iu.insumoId, (decrementosInsumo.get(iu.insumoId) ?? 0) + iu.quantidadePorPeca);
     }
   }
 
-  // Transacao: baixa de estoque de materiais + insumos + mudanca de status sao atomicas.
-  await prisma.$transaction([
-    ...orcamento.itens.map((it) =>
-      prisma.material.update({
-        where: { id: it.materialId },
-        data: { estoqueG: { decrement: it.consumoG } },
-      }),
-    ),
-    ...[...decrementosInsumo.entries()].map(([insumoId, qtd]) =>
-      prisma.insumo.update({ where: { id: insumoId }, data: { estoqueUnidades: { decrement: qtd } } }),
-    ),
-    prisma.orcamento.update({
-      where: { id },
+  await prisma.$transaction(async (tx) => {
+    // Regra 5, de verdade: so' aprova se AINDA estiver pendente. Se duas
+    // requisicoes chegarem juntas, so' uma consegue trocar o status — a
+    // outra ve count=0 aqui e nunca chega a tocar em estoque nenhum.
+    const statusAtualizado = await tx.orcamento.updateMany({
+      where: { id, usuarioId, status: 'pendente' },
       data: { status: 'aprovado', estoqueBaixado: true, aprovadoEm: new Date() },
-    }),
-  ]);
+    });
+    if (statusAtualizado.count === 0) {
+      throw conflito('Orcamento nao esta mais pendente (aprovado/recusado nesse meio-tempo).');
+    }
+
+    // Regra 4: material nunca fica negativo — WHERE com estoqueG >= consumoG
+    // faz a checagem-e-baixa atomicamente, por peca.
+    for (const it of orcamento.itens) {
+      const upd = await tx.material.updateMany({
+        where: { id: it.materialId, estoqueG: { gte: it.consumoG } },
+        data: { estoqueG: { decrement: it.consumoG } },
+      });
+      if (upd.count === 0) {
+        const m = await tx.material.findUnique({ where: { id: it.materialId } });
+        throw regraDeNegocio(
+          `Estoque insuficiente para "${it.nome ?? m?.nome ?? 'peça'}": precisa de ${it.consumoG.toFixed(
+            1,
+          )}g, ha ${(m?.estoqueG ?? 0).toFixed(1)}g.`,
+        );
+      }
+    }
+
+    // Insumos — mesmo padrao de checagem-e-baixa atomica.
+    for (const [insumoId, qtd] of decrementosInsumo) {
+      const upd = await tx.insumo.updateMany({
+        where: { id: insumoId, estoqueUnidades: { gte: qtd } },
+        data: { estoqueUnidades: { decrement: qtd } },
+      });
+      if (upd.count === 0) {
+        const ins = await tx.insumo.findUnique({ where: { id: insumoId } });
+        throw regraDeNegocio(
+          `Estoque insuficiente de "${ins?.nome ?? 'insumo'}": precisa de ${qtd}, ha ${ins?.estoqueUnidades ?? 0}.`,
+        );
+      }
+    }
+  });
 
   return prisma.orcamento.findFirstOrThrow({
     where: { id },
@@ -529,6 +551,7 @@ export async function obterOrcamento(id: number, usuarioId: number) {
     include: {
       itens: { include: { material: true, insumos: { include: { insumo: true } } }, orderBy: { ordem: 'asc' } },
       impressora: true,
+      custosVariaveisSelecionados: { include: { custoVariavel: true } },
     },
   });
   if (!orcamento) throw naoEncontrado('Orcamento');

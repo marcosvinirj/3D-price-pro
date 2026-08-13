@@ -1,7 +1,8 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { api, ApiError } from '../lib/api';
 import type { Material } from '../lib/types';
-import { Alerta, eur, Button, Card, Field, Input, pct, Select } from '../components/ui';
+import { Alerta, Button, Card, Field, Input, pct, Select } from '../components/ui';
+import { useMoeda } from '../lib/moeda';
 
 type FormMat = {
   nome: string;
@@ -28,6 +29,7 @@ const vazio: FormMat = {
 const TIPOS = ['PLA', 'PETG', 'ABS', 'TPU', 'Resina', 'Outro'];
 
 export function MateriaisPage() {
+  const { fmt } = useMoeda();
   const [itens, setItens] = useState<Material[]>([]);
   const [form, setForm] = useState<FormMat>(vazio);
   const [editandoId, setEditandoId] = useState<number | null>(null);
@@ -135,8 +137,11 @@ export function MateriaisPage() {
             <Field label="Preço por kg (€)">
               <Input type="number" min="0" step="0.01" value={form.precoKg} onChange={(e) => set('precoKg', e.target.value)} required />
             </Field>
-            <Field label="Densidade (kg/g)">
+            <Field label="Densidade (g/cm³)">
               <Input type="number" min="0" step="0.01" value={form.densidade} onChange={(e) => set('densidade', e.target.value)} />
+              <span className="mt-1 block text-xs text-slate-400 dark:text-slate-500">
+                só referência — não entra no cálculo do preço (que usa o peso da peça diretamente)
+              </span>
             </Field>
             <Field label="Desperdício/purga (%)">
               <Input type="number" min="0" max="100" step="1" value={form.taxaDesperdicioPct} onChange={(e) => set('taxaDesperdicioPct', e.target.value)} />
@@ -177,7 +182,7 @@ export function MateriaisPage() {
                   <td className="py-2 pr-4 font-medium text-slate-700 dark:text-slate-200">{m.nome}</td>
                   <td className="py-2 pr-4 text-slate-600 dark:text-slate-300">{m.tipo}</td>
                   <td className="py-2 pr-4 text-slate-600 dark:text-slate-300">{m.cor || '—'}</td>
-                  <td className="py-2 pr-4">{eur(m.precoKg)}</td>
+                  <td className="py-2 pr-4">{fmt(m.precoKg)}</td>
                   <td className="py-2 pr-4 text-slate-600 dark:text-slate-300">{pct(m.taxaDesperdicio)}</td>
                   <td className="py-2 pr-4">
                     <span className={m.estoqueBaixo ? 'font-medium text-amber-600' : 'text-slate-700 dark:text-slate-200'}>

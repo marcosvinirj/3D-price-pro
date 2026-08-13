@@ -9,6 +9,17 @@ export const tokenStore = {
   clear: () => localStorage.removeItem(TOKEN_KEY),
 };
 
+/** Nome do evento disparado quando uma requisicao volta 401 (token ausente/
+ *  expirado). O AuthProvider escuta isso pra limpar o estado de sessao — sem
+ *  isso, `autenticado` continuava `true` na tela mesmo com o token ja
+ *  descartado, e o usuario ficava preso vendo paginas que so' dao erro. */
+export const EVENTO_SESSAO_EXPIRADA = 'auth:sessao-expirada';
+
+function avisarSessaoExpirada() {
+  tokenStore.clear();
+  window.dispatchEvent(new Event(EVENTO_SESSAO_EXPIRADA));
+}
+
 export class ApiError extends Error {
   constructor(
     readonly status: number,
@@ -35,7 +46,7 @@ async function request<T>(
   });
 
   if (res.status === 401) {
-    tokenStore.clear();
+    avisarSessaoExpirada();
   }
 
   const texto = await res.text();
@@ -57,7 +68,7 @@ async function baixarArquivo(caminho: string, nomePadrao: string): Promise<void>
     headers: token ? { Authorization: `Bearer ${token}` } : {},
   });
   if (!res.ok) {
-    if (res.status === 401) tokenStore.clear();
+    if (res.status === 401) avisarSessaoExpirada();
     throw new ApiError(res.status, 'Falha ao baixar arquivo');
   }
   const blob = await res.blob();

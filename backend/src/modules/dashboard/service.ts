@@ -121,8 +121,17 @@ export async function obterMetricas(usuarioId: number) {
         Math.round(aprovados.reduce((s, o) => s + o.precoCobrado, 0) * 100) / 100,
       lucroAprovado:
         Math.round(parsedAprovados.reduce((s, p) => s + p.resultado.margem.lucro, 0) * 100) / 100,
-      custoMedioPorPeca:
-        Math.round(media(parsed.map((p) => p.resultado.custos.custoComFalha)) * 100) / 100,
+      // Custo TOTAL (com provisao de falha) dividido pelo total de PECAS —
+      // nao pela quantidade de orcamentos. Um orcamento com 5 pecas conta 5,
+      // nao 1 (custoComFalha ja e' o total do orcamento inteiro, entao a
+      // media certa e' soma/total-de-pecas, nao media dos custoComFalha por
+      // orcamento — senao um orcamento de 5 pecas pesa igual a um de 1).
+      custoMedioPorPeca: (() => {
+        const totalPecas = parsed.reduce((s, p) => s + p.o.itens.length, 0);
+        if (totalPecas === 0) return 0;
+        const custoTotal = parsed.reduce((s, p) => s + p.resultado.custos.custoComFalha, 0);
+        return Math.round((custoTotal / totalPecas) * 100) / 100;
+      })(),
       precoMedio: Math.round(media(parsed.map((p) => p.o.precoFinal)) * 100) / 100,
     },
     margem: {

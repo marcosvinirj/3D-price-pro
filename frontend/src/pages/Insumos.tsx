@@ -1,7 +1,8 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { api, ApiError } from '../lib/api';
 import type { Insumo } from '../lib/types';
-import { Alerta, eur, Button, Card, Field, Input } from '../components/ui';
+import { Alerta, Button, Card, Field, Input } from '../components/ui';
+import { useMoeda } from '../lib/moeda';
 
 type FormInsumo = {
   nome: string;
@@ -18,6 +19,7 @@ const vazio: FormInsumo = {
 };
 
 export function InsumosPage() {
+  const { fmt } = useMoeda();
   const [itens, setItens] = useState<Insumo[]>([]);
   const [form, setForm] = useState<FormInsumo>(vazio);
   const [editandoId, setEditandoId] = useState<number | null>(null);
@@ -93,8 +95,8 @@ export function InsumosPage() {
         <div>
           <h1 className="text-lg font-semibold text-slate-800 dark:text-slate-100">Insumos</h1>
           <p className="text-sm text-slate-500 dark:text-slate-400">
-            Consumíveis por peça (argola, escovinha, saco zip...). Ao contrário de Custos Variáveis, o
-            consumo de um insumo multiplica pela quantidade de peças que o usam no orçamento.
+            Consumíveis por peça (argola, escovinha, saco zip...). No orçamento, você informa
+            diretamente quantas unidades de cada insumo aquela peça usa — sem multiplicação automática.
           </p>
         </div>
         <Button onClick={novo}>Novo insumo</Button>
@@ -163,7 +165,7 @@ export function InsumosPage() {
               {itens.map((i) => (
                 <tr key={i.id} className="border-b border-slate-100 dark:border-slate-800">
                   <td className="py-2 pr-4 font-medium text-slate-700 dark:text-slate-200">{i.nome}</td>
-                  <td className="py-2 pr-4">{eur(i.valorUnitario)}</td>
+                  <td className="py-2 pr-4">{fmt(i.valorUnitario)}</td>
                   <td className="py-2 pr-4">
                     <span className={i.estoqueBaixo ? 'font-medium text-amber-600' : 'text-slate-700 dark:text-slate-200'}>
                       {i.estoqueUnidades.toLocaleString('pt-BR')} un.

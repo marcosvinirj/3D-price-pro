@@ -28,6 +28,18 @@ function materiaisResumo(o: { itens: { material: { nome: string; cor: string | n
     .join(' + ');
 }
 
+/**
+ * Neutraliza gatilho de formula (Excel/Sheets) em texto vindo de dado
+ * digitado por gente (cliente, descricao...) antes de exportar — sem isso,
+ * um texto comecando com =, +, -, @, tab ou CR pode ser executado como
+ * formula/comando ao abrir o arquivo no Excel ("CSV/formula injection").
+ * Prefixar com aspas simples faz o Excel tratar como texto puro.
+ */
+function semFormula(v: unknown): string {
+  const s = v == null ? '' : String(v);
+  return /^[=+\-@\t\r]/.test(s) ? `'${s}` : s;
+}
+
 /** Escapa um campo para CSV (aspas duplas + envolve se tiver separador). */
 function campoCsv(v: unknown): string {
   const s = v == null ? '' : String(v);
@@ -114,11 +126,11 @@ orcamentosRouter.get(
       [
         o.id,
         new Date(o.criadoEm).toISOString(),
-        o.cliente ?? '',
-        o.descricaoPeca ?? '',
+        semFormula(o.cliente ?? ''),
+        semFormula(o.descricaoPeca ?? ''),
         o.itens.length,
-        materiaisResumo(o),
-        o.impressora.nome,
+        semFormula(materiaisResumo(o)),
+        semFormula(o.impressora.nome),
         o.itens.reduce((s, i) => s + i.pesoG, 0),
         o.precoFinal,
         o.precoCobrado,
@@ -158,11 +170,11 @@ orcamentosRouter.get(
         `<Row>${[
           o.id,
           new Date(o.criadoEm).toISOString().slice(0, 10),
-          o.cliente ?? '',
-          o.descricaoPeca ?? '',
+          semFormula(o.cliente ?? ''),
+          semFormula(o.descricaoPeca ?? ''),
           o.itens.length,
-          materiaisResumo(o),
-          o.impressora.nome,
+          semFormula(materiaisResumo(o)),
+          semFormula(o.impressora.nome),
           o.itens.reduce((s, i) => s + i.pesoG, 0),
           o.precoFinal,
           o.precoCobrado,
@@ -200,10 +212,10 @@ orcamentosRouter.get(
   asyncHandler(async (req, res) => {
     const usuarioId = req.usuario!.sub;
     const id = obterId(req);
-    await obterOrcamento(id, usuarioId); // garante que o orcamento e' do usuario (404 senao)
     const codigo = typeof req.query.moeda === 'string' ? req.query.moeda : undefined;
     const moeda = await obterMoedaOuBase(usuarioId, codigo);
-    const bytes = await gerarPdfOrcamento(id, moeda);
+    // gerarPdfOrcamento ja' filtra por usuarioId (404 se nao for do usuario).
+    const bytes = await gerarPdfOrcamento(id, usuarioId, moeda);
     res.setHeader('Content-Type', 'application/pdf');
     res.setHeader('Content-Disposition', `inline; filename="${nomeArquivoPdf(id)}"`);
     res.send(Buffer.from(bytes));

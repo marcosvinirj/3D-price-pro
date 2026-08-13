@@ -1,9 +1,11 @@
 import { useEffect, useState, type FormEvent } from 'react';
 import { api, ApiError } from '../lib/api';
 import type { CustoVariavel } from '../lib/types';
-import { Alerta, eur, Button, Card, Field, Input } from '../components/ui';
+import { Alerta, Button, Card, Field, Input } from '../components/ui';
+import { useMoeda } from '../lib/moeda';
 
 export function CustosVariaveisPage() {
+  const { fmt } = useMoeda();
   const [itens, setItens] = useState<CustoVariavel[]>([]);
   const [nome, setNome] = useState('');
   const [valor, setValor] = useState('');
@@ -115,7 +117,7 @@ export function CustosVariaveisPage() {
             {itens.map((c) => (
               <tr key={c.id} className="border-b border-slate-100 dark:border-slate-800">
                 <td className="py-2 pr-4 font-medium text-slate-700 dark:text-slate-200">{c.nome}</td>
-                <td className="py-2 pr-4">{eur(c.valorUnitario)}</td>
+                <td className="py-2 pr-4">{fmt(c.valorUnitario)}</td>
                 <td className="py-2 pr-4">
                   <div className="flex gap-2">
                     <Button

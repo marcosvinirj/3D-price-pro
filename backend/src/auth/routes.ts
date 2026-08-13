@@ -35,7 +35,10 @@ authRouter.post(
   '/registro',
   validarBody(registroSchema),
   asyncHandler(async (req, res) => {
-    const { email, senha, role: papelSolicitado } = req.body as z.infer<typeof registroSchema>;
+    const { senha, role: papelSolicitado } = req.body as z.infer<typeof registroSchema>;
+    // Normaliza p/ minuscula: sem isso "User@x.com" e "user@x.com" cadastram
+    // como contas DIFERENTES (Postgres compara string com case-sensitivity).
+    const email = (req.body as z.infer<typeof registroSchema>).email.toLowerCase();
 
     const total = await prisma.user.count();
     const bootstrap = total === 0;
@@ -62,7 +65,8 @@ authRouter.post(
   '/login',
   validarBody(loginSchema),
   asyncHandler(async (req, res) => {
-    const { email, senha } = req.body as z.infer<typeof loginSchema>;
+    const { senha } = req.body as z.infer<typeof loginSchema>;
+    const email = (req.body as z.infer<typeof loginSchema>).email.toLowerCase();
 
     const user = await prisma.user.findUnique({ where: { email } });
     // Mesma resposta para email inexistente ou senha errada (evita enumeracao).

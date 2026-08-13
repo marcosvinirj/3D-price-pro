@@ -185,6 +185,7 @@ interface OrcamentoParaEditar {
     quantidade: number;
     insumos: { insumoId: number; quantidadePorPeca: number }[];
   }[];
+  custosVariaveisSelecionados: { custoVariavelId: number }[];
   resultado: ResultadoPrecificacao;
 }
 
@@ -265,9 +266,7 @@ export function SimuladorPage() {
           descontoPct:
             entrada.desconto?.tipo === 'percentual' ? String(Math.round(entrada.desconto.valor * 100)) : '0',
           arredondamento: entrada.arredondamento?.modo ?? 'nenhum',
-          // Nao da' pra recuperar quais custos variaveis foram selecionados
-          // originalmente (so' o total soma foi salvo) — usuario re-seleciona se preciso.
-          custosVariaveisIds: [],
+          custosVariaveisIds: o.custosVariaveisSelecionados.map((cv) => cv.custoVariavelId),
         });
         setCarregandoEdicao(false);
       } else {

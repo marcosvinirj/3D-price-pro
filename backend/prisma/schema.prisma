@@ -81,14 +81,16 @@ model CustoFixo {
   @@index([usuarioId])
 }
 
-// Custos variaveis por peca (cola, alcool, embalagem, etiqueta, frete...).
-// Sao SELECIONADOS por orcamento; a soma dos escolhidos entra no custo total.
+// Custos variaveis por orcamento (cola, alcool, embalagem, etiqueta, frete...).
+// Sao SELECIONADOS por orcamento (cobrados uma vez, nao por peca); a soma dos
+// escolhidos entra no custo total.
 model CustoVariavel {
   id            Int      @id @default(autoincrement())
   nome          String
   valorUnitario Float // custo por peca quando aplicado
   ativo         Boolean  @default(true)
   criadoEm      DateTime @default(now())
+  orcamentos    OrcamentoCustoVariavel[]
 
   usuarioId Int
   usuario   User @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
@@ -172,11 +174,31 @@ model Orcamento {
   criadoEm       DateTime  @default(now())
   aprovadoEm     DateTime?
 
-  itens      OrcamentoItem[]
-  impressora Impressora      @relation(fields: [impressoraId], references: [id])
-  usuario    User            @relation(fields: [usuarioId], references: [id])
+  itens                        OrcamentoItem[]
+  impressora                   Impressora               @relation(fields: [impressoraId], references: [id])
+  usuario                      User                     @relation(fields: [usuarioId], references: [id])
+  custosVariaveisSelecionados  OrcamentoCustoVariavel[]
 
   @@index([usuarioId])
+}
+
+// Custo variavel selecionado num ORCAMENTO (nao por peca — e' cobrado uma vez
+// pro orcamento inteiro). Guarda a selecao pra dar pra reidratar ao editar um
+// orcamento pendente — antes so' o TOTAL somado ficava salvo (no snapshot
+// JSON), e reabrir pra editar sempre mostrava os chips desmarcados, mesmo
+// que o usuario nao mexesse em nada; salvar assim zerava o custo variavel do
+// preco silenciosamente. Snapshot do preco no momento (regra 6).
+model OrcamentoCustoVariavel {
+  id                    Int   @id @default(autoincrement())
+  valorUnitarioSnapshot Float
+
+  orcamentoId Int
+  orcamento   Orcamento @relation(fields: [orcamentoId], references: [id], onDelete: Cascade)
+  custoVariavelId Int
+  custoVariavel   CustoVariavel @relation(fields: [custoVariavelId], references: [id])
+
+  @@index([orcamentoId])
+  @@index([custoVariavelId])
 }
 
 // Uma peca dentro de um orcamento (ex.: "Cauda", "Torso" de um modelo
@@ -208,9 +230,10 @@ model OrcamentoItem {
   @@index([materialId])
 }
 
-// Insumo usado numa peca do orcamento, com a quantidade usada POR UNIDADE da
-// peca (ex.: 1 argola por canudo — o consumo total e' quantidadePorPeca *
-// OrcamentoItem.quantidade). Snapshot do preco do insumo (regra 6).
+// Insumo usado numa peca do orcamento. `quantidadePorPeca` e' nome de coluna
+// historico — o valor e' o TOTAL direto usado na peca (nao multiplica por
+// OrcamentoItem.quantidade, que e' so' informativa). Snapshot do preco do
+// insumo (regra 6).
 model OrcamentoItemInsumo {
   id                    Int   @id @default(autoincrement())
   quantidadePorPeca     Int

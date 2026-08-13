@@ -46,10 +46,14 @@ const STATUS_LABEL: Record<string, string> = {
 
 export async function gerarPdfOrcamento(
   id: number,
+  usuarioId: number,
   moeda: MoedaPdf = { simbolo: '€', taxaParaBase: 1 },
 ): Promise<Uint8Array> {
-  const orc = await prisma.orcamento.findUnique({
-    where: { id },
+  // Filtra por usuarioId aqui mesmo (nao so' no chamador) — a funcao fica
+  // segura por si so' mesmo se um caminho futuro esquecer de checar dono
+  // antes de chamar (defesa em profundidade pro isolamento multi-tenant).
+  const orc = await prisma.orcamento.findFirst({
+    where: { id, usuarioId },
     include: { itens: { include: { material: true }, orderBy: { ordem: 'asc' } } },
   });
   if (!orc) throw naoEncontrado('Orcamento');

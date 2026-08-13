@@ -12,7 +12,7 @@ const moedaSchema = z.object({
   codigo: z.string().trim().regex(/^[A-Za-z]{3}$/, 'Use o código ISO de 3 letras (ex.: USD)'),
   nome: z.string().min(1),
   simbolo: z.string().min(1).max(4),
-  taxaParaBase: z.number().positive('A taxa deve ser maior que zero'),
+  taxaParaBase: z.number().finite('A taxa deve ser um numero finito').positive('A taxa deve ser maior que zero'),
 });
 
 const moedaUpdateSchema = moedaSchema.omit({ codigo: true }).partial();

@@ -272,3 +272,62 @@ describe('Regra 6 — snapshot preserva orcamentos antigos', () => {
     expect(depois.body.resultado.precoFinal).toBe(precoOriginal);
   });
 });
+
+describe('Aprovacao concorrente nao duplica baixa de estoque (corrida corrigida)', () => {
+  it('duas aprovacoes simultaneas do MESMO orcamento: so uma vence, material baixa uma unica vez', async () => {
+    const orc = (
+      await request(app).post('/orcamentos').set(auth(ctx.tokenOperador)).send(inputOrcamento()).expect(201)
+    ).body.orcamento;
+    const antes = await prisma.material.findUniqueOrThrow({ where: { id: ctx.materialId } });
+
+    // Disparadas ao mesmo tempo (nao em sequencia) — e' exatamente a corrida
+    // de um duplo-clique ou duas abas aprovando o mesmo orcamento.
+    const [r1, r2] = await Promise.all([
+      request(app).post(`/orcamentos/${orc.id}/aprovar`).set(auth(ctx.tokenOperador)),
+      request(app).post(`/orcamentos/${orc.id}/aprovar`).set(auth(ctx.tokenOperador)),
+    ]);
+    expect([r1.status, r2.status].sort()).toEqual([200, 409]);
+
+    // Consumo (52.5g) baixado uma unica vez, nao duas.
+    const depois = await prisma.material.findUniqueOrThrow({ where: { id: ctx.materialId } });
+    expect(antes.estoqueG - depois.estoqueG).toBeCloseTo(52.5, 5);
+  });
+});
+
+describe('Custos variaveis: selecao persiste e e recuperada ao editar (regra 6)', () => {
+  it('orcamento salvo guarda QUAIS custos variaveis foram escolhidos, nao so o total', async () => {
+    const cv = (
+      await request(app)
+        .post('/custos-variaveis')
+        .set(auth(ctx.tokenOperador))
+        .send({ nome: 'Frete', valorUnitario: 5 })
+        .expect(201)
+    ).body;
+
+    const orc = (
+      await request(app)
+        .post('/orcamentos')
+        .set(auth(ctx.tokenOperador))
+        .send(inputOrcamento({ custosVariaveisIds: [cv.id] }))
+        .expect(201)
+    ).body.orcamento;
+
+    const detalhado = await request(app).get(`/orcamentos/${orc.id}`).set(auth(ctx.tokenOperador)).expect(200);
+    expect(detalhado.body.custosVariaveisSelecionados).toHaveLength(1);
+    expect(detalhado.body.custosVariaveisSelecionados[0].custoVariavelId).toBe(cv.id);
+    expect(detalhado.body.custosVariaveisSelecionados[0].valorUnitarioSnapshot).toBe(5);
+
+    // Reeditar SEM alterar nada preserva o mesmo preco (o bug antigo zerava
+    // custosVariaveisIds no reload, entao salvar sem re-marcar os chips
+    // derrubava o preco silenciosamente).
+    const precoComFrete = orc.precoFinal;
+    const reeditado = (
+      await request(app)
+        .patch(`/orcamentos/${orc.id}`)
+        .set(auth(ctx.tokenOperador))
+        .send(inputOrcamento({ custosVariaveisIds: detalhado.body.custosVariaveisSelecionados.map((c: { custoVariavelId: number }) => c.custoVariavelId) }))
+        .expect(200)
+    ).body.orcamento;
+    expect(reeditado.precoFinal).toBe(precoComFrete);
+  });
+});

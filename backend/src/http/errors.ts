@@ -1,6 +1,7 @@
 /** Erros HTTP tipados e utilitarios de tratamento de erro. */
 import type { NextFunction, Request, Response } from 'express';
 import { ZodError } from 'zod';
+import { Prisma } from '@prisma/client';
 import { ErroValidacaoPrecificacao } from '../pricing/index.js';
 
 /** Erro de aplicacao com status HTTP e codigo semantico. */
@@ -54,6 +55,17 @@ export function errorHandler(
     return res
       .status(422)
       .json({ codigo: 'PRECIFICACAO_INVALIDA', mensagem: err.message, detalhes: err.issues });
+  }
+  // Corrida entre duas requisicoes quase simultaneas (ex.: duplo-clique num
+  // cadastro/registro) pode passar pela checagem previa e so' esbarrar na
+  // constraint unica do banco — sem isso, virava 500 generico em vez de um
+  // 409 com mensagem legivel.
+  if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
+    const alvo = Array.isArray(err.meta?.target) ? (err.meta.target as string[]).join(', ') : undefined;
+    return res.status(409).json({
+      codigo: 'CONFLITO',
+      mensagem: alvo ? `Já existe um registro com esse ${alvo}.` : 'Registro duplicado.',
+    });
   }
   console.error('Erro nao tratado:', err);
   return res.status(500).json({ codigo: 'ERRO_INTERNO', mensagem: 'Erro interno' });

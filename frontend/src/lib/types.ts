@@ -207,6 +207,14 @@ export interface OrcamentoItemSalvo {
   insumos: OrcamentoItemInsumoSalvo[];
 }
 
+/** Um custo variavel selecionado num orcamento ja salvo (como devolvido pela API). */
+export interface OrcamentoCustoVariavelSalvo {
+  id: number;
+  custoVariavelId: number;
+  valorUnitarioSnapshot: number;
+  custoVariavel: { nome: string };
+}
+
 /** Orcamento completo, como devolvido por GET /orcamentos/:id. */
 export interface OrcamentoDetalhado {
   id: number;
@@ -219,5 +227,6 @@ export interface OrcamentoDetalhado {
   impressoraId: number;
   impressora: { id: number; nome: string };
   itens: OrcamentoItemSalvo[];
+  custosVariaveisSelecionados: OrcamentoCustoVariavelSalvo[];
   resultado: ResultadoPrecificacao;
 }
