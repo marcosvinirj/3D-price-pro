@@ -15,7 +15,8 @@ import { precificarMultiplo, type ResultadoPrecificacaoMultipla } from '../../pr
 import { arredondamentoSchema, descontoSchema } from '../../pricing/schema.js';
 import { obterConfiguracao } from '../configuracao/service.js';
 
-/** Um insumo usado nesta peca, com a quantidade usada POR UNIDADE (ex.: 1 argola por canudo). */
+/** Um insumo usado nesta peca. `quantidade` e' o TOTAL direto usado nela
+ *  (nao "por unidade") — nao ha' outro multiplicador em cima. */
 const itemInsumoInputSchema = z.object({
   insumoId: z.number().int().positive(),
   quantidade: z.number().int().positive(),
@@ -27,9 +28,10 @@ const itemInputSchema = z.object({
   pesoG: z.number().positive(),
   tempoImpressaoH: z.number().nonnegative(),
   tempoPosProcessamentoH: z.number().nonnegative(),
-  /** Unidades identicas que esta peca representa (25 canudos = 25). So' os
-   *  insumos escalam por ela; peso/consumo de filamento e tempo de
-   *  impressao/pos-processamento NAO (peso e' o total gasto na peca). */
+  /** Unidades identicas que esta peca representa (25 canudos = 25).
+   *  Puramente INFORMATIVA (aparece no PDF/WhatsApp) — nao entra em nenhuma
+   *  conta. Peso/consumo de filamento e' o total gasto na peca; a
+   *  quantidade de cada insumo (abaixo) ja' e' o total direto usado. */
   quantidade: z.number().int().positive().default(1),
   insumos: z.array(itemInsumoInputSchema).optional(),
 });
@@ -53,13 +55,15 @@ export const orcamentoInputSchema = z.object({
 
 export type OrcamentoInput = z.infer<typeof orcamentoInputSchema>;
 
-/** Uso de um insumo dentro de uma peca calculada, ja com o total (por peca * quantidade). */
+/** Uso de um insumo dentro de uma peca calculada. */
 interface InsumoUsadoCalculado {
   insumoId: number;
   insumoNome: string;
+  /** Nome de coluna historico no banco — o valor e' o TOTAL direto usado na
+   *  peca (nao "por peca"/unidade; ver comentario em `itemInsumoInputSchema`). */
   quantidadePorPeca: number;
   valorUnitarioSnapshot: number;
-  /** quantidadePorPeca * quantidade do item — o que efetivamente sai do estoque. */
+  /** = quantidadePorPeca (mesmo numero) — o que efetivamente sai do estoque. */
   totalUnidades: number;
   estoqueUnidades: number;
 }
@@ -157,8 +161,9 @@ async function montarCalculo(input: OrcamentoInput, usuarioId: number) {
   const itensCalculados: ItemCalculado[] = input.itens.map((it, idx) => {
     const m = materiaisPorId.get(it.materialId)!;
     // Consumo de material e' o total gasto informado para a peca — calculo
-    // por grama de filamento gasto, NAO escala por quantidade (so' insumos
-    // escalam — ver InsumoUsadoCalculado abaixo).
+    // por grama de filamento gasto. `it.quantidade` (da peca) e' puramente
+    // informativa e nao entra em NENHUMA conta aqui (nem material nem
+    // insumo) — so' aparece no PDF/WhatsApp.
     const consumoG = it.pesoG * (1 + m.taxaDesperdicio);
     const insumosUsados: InsumoUsadoCalculado[] = (it.insumos ?? []).map((iu) => {
       const ins = insumosPorId.get(iu.insumoId)!;
@@ -167,7 +172,8 @@ async function montarCalculo(input: OrcamentoInput, usuarioId: number) {
         insumoNome: ins.nome,
         quantidadePorPeca: iu.quantidade,
         valorUnitarioSnapshot: ins.valorUnitario,
-        totalUnidades: iu.quantidade * it.quantidade,
+        // iu.quantidade ja' e' o total direto — nao multiplica por it.quantidade.
+        totalUnidades: iu.quantidade,
         estoqueUnidades: ins.estoqueUnidades,
       };
     });
@@ -416,7 +422,7 @@ export async function aprovarOrcamento(id: number, usuarioId: number) {
     for (const iu of it.insumos) {
       const ins = insumosPorId.get(iu.insumoId);
       if (!ins) throw naoEncontrado('Insumo');
-      const totalUnidades = iu.quantidadePorPeca * it.quantidade;
+      const totalUnidades = iu.quantidadePorPeca; // ja' e' o total direto
       if (ins.estoqueUnidades < totalUnidades) {
         throw regraDeNegocio(
           `Estoque insuficiente de "${ins.nome}" para "${it.nome ?? m.nome}": precisa de ${totalUnidades}, ha ${ins.estoqueUnidades}.`,
@@ -430,7 +436,7 @@ export async function aprovarOrcamento(id: number, usuarioId: number) {
   const decrementosInsumo = new Map<number, number>();
   for (const it of orcamento.itens) {
     for (const iu of it.insumos) {
-      const total = iu.quantidadePorPeca * it.quantidade;
+      const total = iu.quantidadePorPeca; // ja' e' o total direto
       decrementosInsumo.set(iu.insumoId, (decrementosInsumo.get(iu.insumoId) ?? 0) + total);
     }
   }
@@ -477,7 +483,7 @@ export async function excluirOrcamento(id: number, usuarioId: number) {
     const incrementosInsumo = new Map<number, number>();
     for (const it of orcamento.itens) {
       for (const iu of it.insumos) {
-        const total = iu.quantidadePorPeca * it.quantidade;
+        const total = iu.quantidadePorPeca; // ja' e' o total direto
         incrementosInsumo.set(iu.insumoId, (incrementosInsumo.get(iu.insumoId) ?? 0) + total);
       }
     }

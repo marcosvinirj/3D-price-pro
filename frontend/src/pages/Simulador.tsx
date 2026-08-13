@@ -16,7 +16,7 @@ import type {
 import { Alerta, Button, Card, DuracaoInput, Field, Input, gramas, pct, Select } from '../components/ui';
 import { useMoeda } from '../lib/moeda';
 
-/** Um insumo selecionado numa peca, com a quantidade usada POR UNIDADE dela. */
+/** Um insumo selecionado numa peca, com a quantidade TOTAL usada nela (número final). */
 interface ItemInsumoForm {
   insumoId: string;
   quantidade: string;
@@ -328,7 +328,7 @@ export function SimuladorPage() {
     setSalvo(null);
   }
 
-  /** Liga/desliga um insumo numa peca (comeca com quantidade 1 por unidade). */
+  /** Liga/desliga um insumo numa peca (comeca com quantidade total 1). */
   function alternarInsumoItem(idx: number, insumoId: number) {
     setForm((f) => ({
       ...f,
@@ -347,7 +347,7 @@ export function SimuladorPage() {
     setSalvo(null);
   }
 
-  /** Ajusta quantas unidades do insumo cada UNIDADE da peca usa (ex.: 2 argolas por canudo). */
+  /** Ajusta o total direto de unidades do insumo usado na peca (ex.: 15 argolas nesta peca). */
   function setInsumoQuantidade(idx: number, insumoId: number, quantidade: string) {
     setForm((f) => ({
       ...f,
@@ -553,7 +553,7 @@ export function SimuladorPage() {
                       onChange={(e) => setItem(idx, 'quantidade', e.target.value)}
                     />
                     <span className="mt-1 block text-xs text-slate-400 dark:text-slate-500">
-                      unidades iguais nesta leva — multiplica só os insumos
+                      só informativo (quantas peças vão pra impressão) — aparece no PDF, não entra na conta
                     </span>
                   </Field>
                 </div>
@@ -582,11 +582,11 @@ export function SimuladorPage() {
                   </Field>
                 </div>
 
-                {/* Insumos consumidos por UNIDADE desta peca (argola, escovinha...) */}
+                {/* Insumos desta peca (argola, escovinha...); a quantidade e' o total direto. */}
                 {insumosDisponiveis.length > 0 && (
                   <div className="mt-3 border-t border-slate-100 pt-3 dark:border-slate-800">
                     <div className="mb-2 text-xs font-medium text-slate-500 dark:text-slate-400">
-                      Insumos por unidade
+                      Insumos
                     </div>
                     <div className="flex flex-wrap gap-2">
                       {insumosDisponiveis.map((ins) => {
@@ -622,7 +622,7 @@ export function SimuladorPage() {
                                   value={sel!.quantidade}
                                   onChange={(e) => setInsumoQuantidade(idx, ins.id, e.target.value)}
                                   className="w-10 rounded-md border-0 bg-white/20 px-1 py-0.5 text-center text-white [color-scheme:dark] focus:outline-none focus:ring-1 focus:ring-white/50"
-                                  title="Quantidade deste insumo por unidade da peça"
+                                  title="Quantidade total deste insumo nesta peça (número final, já é o total)"
                                 />
                               </>
                             )}

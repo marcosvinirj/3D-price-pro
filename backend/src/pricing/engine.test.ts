@@ -343,12 +343,12 @@ describe('quantidade e insumos por peca', () => {
     expect(r.custos.custoInsumos).toBe(0);
   });
 
-  it('quantidade multiplica SO insumos — material (por grama gasta), tempo/energia/deprec./mao de obra NAO', () => {
-    // 25 unidades de uma peca com 5g de filamento GASTO NO TOTAL (calculo por
-    // grama de filamento gasto, nao por unidade), sem desperdicio, com 1
-    // argola (0.07) e 1 escovinha (0.05) por unidade. Tempo de impressao/
-    // pos-processamento e' do LOTE inteiro (nao escala).
-    const r = precificarMultiplo(
+  it('peca.quantidade e puramente informativa — NAO multiplica material nem insumos', () => {
+    // 5g de filamento GASTO NO TOTAL (calculo por grama de filamento gasto),
+    // sem desperdicio, com 1 argola (0.07) e 1 escovinha (0.05) — os numeros
+    // de insumo ja' sao o TOTAL direto, nao "por unidade". Tempo de
+    // impressao/pos-processamento e' do LOTE inteiro (nao escala nunca).
+    const montar = (quantidadeDaPeca: number) =>
       entradaMultiplaBase({
         itens: [
           {
@@ -357,7 +357,7 @@ describe('quantidade e insumos por peca', () => {
               pesoG: 5,
               tempoImpressaoH: 2,
               tempoPosProcessamentoH: 1,
-              quantidade: 25,
+              quantidade: quantidadeDaPeca,
               insumos: [
                 { valorUnitario: 0.07, quantidade: 1 },
                 { valorUnitario: 0.05, quantidade: 1 },
@@ -368,15 +368,51 @@ describe('quantidade e insumos por peca', () => {
         ],
         custos: { precoKwh: 1, valorHoraTrabalho: 20, custosFixosMensais: 0, horasProdutivasMes: 160 },
         parametros: { taxaFalha: 0, margemLucro: 0, margemMinima: 0 },
+      });
+
+    const item1 = precificarMultiplo(montar(1)).itens[0]!;
+    const item25 = precificarMultiplo(montar(25)).itens[0]!;
+
+    // Mudar SO a quantidade da peca nao muda nenhum custo.
+    expect(item25.custoMaterial).toBeCloseTo(item1.custoMaterial, 4);
+    expect(item25.custoInsumos).toBeCloseTo(item1.custoInsumos, 4);
+    expect(item25.custoItemTotal).toBeCloseTo(item1.custoItemTotal, 4);
+
+    expect(item1.custoMaterial).toBeCloseTo(0.5, 4); // (5*100/1000)
+    expect(item1.custoInsumos).toBeCloseTo(0.12, 4); // 0.07 + 0.05 (total direto, sem multiplicar)
+    expect(item1.custoEnergia).toBeCloseTo(0.4, 4);
+    expect(item1.depreciacao).toBeCloseTo(2, 4);
+    expect(item1.maoDeObra).toBeCloseTo(20, 4);
+    expect(item1.custoItemTotal).toBeCloseTo(23.02, 4);
+
+    // quantidade continua guardada/exibida (usada no PDF), so' nao entra na conta.
+    expect(item1.quantidade).toBe(1);
+    expect(item25.quantidade).toBe(25);
+  });
+
+  it('quantidade do insumo e o total direto — nao "por unidade" (evita duplicar o mesmo multiplicador de dois jeitos)', () => {
+    // 15 argolas nesta peca, digitado direto no insumo — nao ha' um segundo
+    // multiplicador via peca.quantidade (1x15 e 15x1 dao o mesmo resultado
+    // hoje, o que confundia; agora so' o numero do insumo conta).
+    const r = precificarMultiplo(
+      entradaMultiplaBase({
+        itens: [
+          {
+            peca: {
+              pesoG: 5,
+              tempoImpressaoH: 1,
+              tempoPosProcessamentoH: 0,
+              quantidade: 1,
+              insumos: [{ valorUnitario: 0.1, quantidade: 15 }],
+            },
+            material: { precoKg: 100, taxaDesperdicio: 0 },
+          },
+        ],
+        custos: { precoKwh: 0, valorHoraTrabalho: 0, custosFixosMensais: 0, horasProdutivasMes: 160 },
+        parametros: { taxaFalha: 0, margemLucro: 0, margemMinima: 0 },
       }),
     );
-    const item = r.itens[0]!;
-    expect(item.custoMaterial).toBeCloseTo(0.5, 4); // (5*100/1000) — nao multiplica
-    expect(item.custoInsumos).toBeCloseTo(3, 4); // (0.07+0.05) * 25
-    expect(item.custoEnergia).toBeCloseTo(0.4, 4); // (200/1000)*2*1 — nao multiplica
-    expect(item.depreciacao).toBeCloseTo(2, 4); // (2000/2000)*2 — nao multiplica
-    expect(item.maoDeObra).toBeCloseTo(20, 4); // 1*20 — nao multiplica
-    expect(item.custoItemTotal).toBeCloseTo(25.9, 4);
+    expect(r.custos.custoInsumos).toBeCloseTo(1.5, 4); // 0.10 * 15
   });
 
   it('insumos de varias pecas somam no custoInsumos agregado', () => {
@@ -385,8 +421,8 @@ describe('quantidade e insumos por peca', () => {
         pesoG: 5,
         tempoImpressaoH: 1,
         tempoPosProcessamentoH: 0,
-        quantidade: qtd,
-        insumos: [{ valorUnitario: 0.1, quantidade: 1 }],
+        quantidade: 1,
+        insumos: [{ valorUnitario: 0.1, quantidade: qtd }],
       },
       material: { precoKg: 100, taxaDesperdicio: 0 },
     });

@@ -150,7 +150,7 @@ export interface RespostaSimulacao {
 
 export type ModoArredondamento = 'nenhum' | 'maisProximo' | 'paraCima' | 'psicologico';
 
-/** Um insumo usado numa peca, com a quantidade usada POR UNIDADE da peca (ex.: 1 argola por canudo). */
+/** Um insumo usado numa peca; `quantidade` é o TOTAL direto usado nela (não "por unidade"). */
 export interface OrcamentoItemInsumoInput {
   insumoId: number;
   quantidade: number;

@@ -55,9 +55,9 @@ export const inteiroPositivo = z
   .positive('Deve ser maior que zero');
 
 /**
- * Um insumo consumido POR UNIDADE da peca (ex.: 1 argola por canudo). O
- * consumo total no orcamento e' `quantidade` (deste insumo, por peca) vezes a
- * quantidade de pecas do item — ver `calcularComponentesPeca`.
+ * Um insumo consumido na peca (ex.: argola, escovinha...). `quantidade' e' o
+ * TOTAL direto usado nessa peca (nao "por unidade") — o consumo no orcamento
+ * e' exatamente esse numero, sem multiplicar por mais nada.
  */
 export const insumoUsadoSchema = z.object({
   valorUnitario: naoNegativo,
@@ -70,12 +70,12 @@ export const entradaPrecificacaoSchema = z
       pesoG: positivo,
       tempoImpressaoH: naoNegativo,
       tempoPosProcessamentoH: naoNegativo,
-      /** Unidades identicas que esta peca representa (25 canudos = 25). So'
-       *  os insumos escalam por ela; peso/consumo de filamento e tempo de
-       *  impressao/pos-processamento NAO (peso e' o total gasto na peca;
-       *  tempo e' do lote inteiro). */
+      /** Unidades identicas que esta peca representa (25 canudos = 25).
+       *  Puramente INFORMATIVA (aparece no PDF/WhatsApp) — nao entra em
+       *  nenhuma conta. Peso/consumo de filamento e' o total gasto na
+       *  peca; insumo.quantidade ja' e' o total direto usado. */
       quantidade: inteiroPositivo.default(1),
-      /** Insumos usados por unidade da peca (argola, escovinha, saco zip...). */
+      /** Insumos usados na peca (argola, escovinha, saco zip...); quantidade e' o total direto. */
       insumos: z.array(insumoUsadoSchema).default([]),
     }),
     material: z.object({

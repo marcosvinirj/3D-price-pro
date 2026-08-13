@@ -12,7 +12,7 @@
  *   Mao de Obra        = tempoPosProcessamentoH * valorHoraTrabalho
  *   Custo Fixo/Hora    = custosFixosMensais / horasProdutivasMes
  *   Custo Fixo Rateado = Custo Fixo/Hora * tempoImpressaoH
- *   Custo Insumos      = soma(insumo.valorUnitario * insumo.quantidade) * quantidade
+ *   Custo Insumos      = soma(insumo.valorUnitario * insumo.quantidade)
  *   Custo Total        = soma dos acima
  *   Custo c/ Falha     = Custo Total * (1 + taxaFalha)
  *   Preco (bruto)      = Custo c/ Falha * (1 + margemLucro)
@@ -20,12 +20,16 @@
  *   Preco Cobrado      = Preco Final - desconto (desconto so sobre o final)
  *
  * `quantidade` e' o numero de unidades identicas que uma peca representa
- * (ex.: 25 canudos impressos juntos na mesma leva) e multiplica SO' os
- * insumos (argola, escovinha...). Peso/consumo de filamento e' o total gasto
- * informado para a peca — calculo por grama de filamento gasto, nao escala
- * por unidade. Tempo de impressao/pos-processamento (e por consequencia
- * energia, depreciacao, custo fixo rateado e mao de obra) sao do LOTE
- * inteiro, nao de uma unidade.
+ * (ex.: 25 canudos impressos juntos na mesma leva). E' puramente
+ * INFORMATIVA — aparece no PDF/WhatsApp, mas NAO multiplica nada aqui.
+ * `insumo.quantidade` ja' e' o total direto usado na peca (nao "por
+ * unidade"): se o usuario quer 15 argolas nesta peca, digita 15 ali — nao
+ * ha' um segundo multiplicador, pra nao duplicar a mesma conta de dois
+ * jeitos (15 argolas x quantidade=1 ou 1 argola x quantidade=15 davam o
+ * mesmo resultado, o que confundia). Peso/consumo de filamento tambem e' o
+ * total gasto informado para a peca — calculo por grama de filamento
+ * gasto. Tempo de impressao/pos-processamento (e por consequencia energia,
+ * depreciacao, custo fixo rateado e mao de obra) sao do LOTE inteiro.
  */
 import { z } from 'zod';
 import { arredondarN, aplicarArredondamento, type EstrategiaArredondamento } from './money.js';
@@ -127,18 +131,19 @@ type CustosEntrada = EntradaPrecificacao['custos'];
 type ParametrosEntrada = EntradaPrecificacao['parametros'];
 
 /**
- * Calcula os componentes de custo de UMA peca (linha do orcamento, que pode
- * representar varias unidades identicas via `peca.quantidade`). Todos sao
+ * Calcula os componentes de custo de UMA peca (linha do orcamento). Todos sao
  * funcoes lineares dos dados de entrada — por isso somar os componentes de
  * varias pecas e so' entao aplicar taxaFalha/margemLucro (uma vez) da o mesmo
  * resultado que aplicar por peca e somar depois. E' o que permite
  * `calcularMultiplo` reaproveitar esta funcao sem duplicar a matematica.
  *
- * `quantidade` multiplica APENAS os insumos (argola, escovinha...). Peso/
- * consumo de filamento e' o total gasto informado para a peca (nao escala
- * por `quantidade` — calculo por grama de filamento gasto, como sempre foi).
- * Tempo de impressao/pos-processamento — e por consequencia energia,
- * depreciacao, custo fixo rateado e mao de obra — sao do LOTE inteiro.
+ * `peca.quantidade` NAO entra em nenhuma conta aqui — e' so' um registro de
+ * quantas unidades essa peca representa (mostrado no PDF/WhatsApp). Peso/
+ * consumo de filamento e' o total gasto informado para a peca (calculo por
+ * grama de filamento gasto). `insumo.quantidade` ja' e' o total direto
+ * usado na peca. Tempo de impressao/pos-processamento — e por consequencia
+ * energia, depreciacao, custo fixo rateado e mao de obra — sao do LOTE
+ * inteiro.
  */
 function calcularComponentesPeca(
   peca: PecaEntrada,
@@ -154,7 +159,9 @@ function calcularComponentesPeca(
   // multiplicado pelo tempo de impressao da peca (nao por peca/mes).
   const custoFixoPorHora = custos.custosFixosMensais / custos.horasProdutivasMes;
   const custoFixoRateado = custoFixoPorHora * peca.tempoImpressaoH;
-  const custoInsumos = peca.insumos.reduce((s, i) => s + i.valorUnitario * i.quantidade, 0) * peca.quantidade;
+  // insumo.quantidade ja' e' o total direto usado na peca (nao "por
+  // unidade") — nao multiplica por peca.quantidade (ver doc acima).
+  const custoInsumos = peca.insumos.reduce((s, i) => s + i.valorUnitario * i.quantidade, 0);
 
   return { custoMaterial, custoEnergia, depreciacao, maoDeObra, custoFixoRateado, custoInsumos };
 }
