@@ -95,6 +95,12 @@ export const IconMoon = (p: P) => (
     <path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z" />
   </svg>
 );
+export const IconWallet = (p: P) => (
+  <svg {...base(p)}>
+    <path d="M3 7a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7Z" />
+    <path d="M3 10h14a2 2 0 0 1 2 2v1a2 2 0 0 1-2 2h-2a1.5 1.5 0 0 1 0-3h2" />
+  </svg>
+);
 export const IconLogout = (p: P) => (
   <svg {...base(p)}>
     <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />

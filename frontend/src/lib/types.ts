@@ -11,6 +11,29 @@ export interface RespostaAuth {
   usuario: Usuario;
 }
 
+/** Uma movimentacao de creditos (ganho ou gasto) — extrato/historico. */
+export interface CreditoTransacao {
+  id: number;
+  quantidade: number; // positivo = ganho, negativo = gasto
+  tipo: 'bonus_cadastro' | 'assinatura_mensal' | 'pacote_avulso' | 'consumo_orcamento' | 'consumo_pdf';
+  referencia: string | null;
+  criadoEm: string;
+}
+
+export interface Assinatura {
+  status: string; // active | past_due | canceled | ...
+  periodoAtualFim: string;
+}
+
+export interface SaldoCreditos {
+  creditos: number;
+  /** Conta isenta (administrativa/interna) — nunca debita, independente do numero em `creditos`. */
+  ilimitado: boolean;
+  assinaturaAtiva: boolean;
+  assinatura: Assinatura | null;
+  historico: CreditoTransacao[];
+}
+
 export interface Material {
   id: number;
   nome: string;

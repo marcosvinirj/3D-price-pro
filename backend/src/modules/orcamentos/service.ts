@@ -14,6 +14,7 @@ import { naoEncontrado, conflito, regraDeNegocio } from '../../http/errors.js';
 import { precificarMultiplo, type ResultadoPrecificacaoMultipla } from '../../pricing/index.js';
 import { arredondamentoSchema, descontoSchema } from '../../pricing/schema.js';
 import { obterConfiguracao } from '../configuracao/service.js';
+import { debitar, CUSTO_ORCAMENTO } from '../creditos/service.js';
 
 /** Um insumo usado nesta peca. `quantidade` e' o TOTAL direto usado nela
  *  (nao "por unidade") — nao ha' outro multiplicador em cima. */
@@ -274,49 +275,56 @@ export async function criarOrcamento(input: OrcamentoInput, usuarioId: number) {
     );
   }
 
-  const orcamento = await prisma.orcamento.create({
-    data: {
-      cliente: input.cliente ?? null,
-      telefone: input.telefone ?? null,
-      descricaoPeca: input.descricaoPeca ?? null,
-      status: 'pendente',
-      entradaJson: JSON.stringify(entradaMotor),
-      resultadoJson: JSON.stringify(resultado),
-      precoFinal: resultado.precoFinal,
-      precoCobrado: resultado.precoCobrado,
-      impressoraId: input.impressoraId,
-      usuarioId,
-      itens: {
-        create: itensCalculados.map((it, idx) => ({
-          nome: it.nome,
-          materialId: it.materialId,
-          pesoG: it.pesoG,
-          tempoImpressaoH: it.tempoImpressaoH,
-          tempoPosProcessamentoH: it.tempoPosProcessamentoH,
-          quantidade: it.quantidade,
-          consumoG: it.consumoG,
-          custoItem: it.custoItem,
-          ordem: idx,
-          insumos: {
-            create: it.insumosUsados.map((iu) => ({
-              insumoId: iu.insumoId,
-              quantidadePorPeca: iu.quantidadePorPeca,
-              valorUnitarioSnapshot: iu.valorUnitarioSnapshot,
-            })),
-          },
-        })),
+  // Debita os creditos e cria o orcamento na MESMA transacao: se o saldo nao
+  // cobrir (creditosInsuficientes), nada e' criado; se a criacao falhar por
+  // qualquer outro motivo, o debito e' desfeito junto (nao cobra por um
+  // orcamento que nao foi salvo).
+  const orcamento = await prisma.$transaction(async (tx) => {
+    await debitar(usuarioId, CUSTO_ORCAMENTO, 'consumo_orcamento', undefined, tx);
+    return tx.orcamento.create({
+      data: {
+        cliente: input.cliente ?? null,
+        telefone: input.telefone ?? null,
+        descricaoPeca: input.descricaoPeca ?? null,
+        status: 'pendente',
+        entradaJson: JSON.stringify(entradaMotor),
+        resultadoJson: JSON.stringify(resultado),
+        precoFinal: resultado.precoFinal,
+        precoCobrado: resultado.precoCobrado,
+        impressoraId: input.impressoraId,
+        usuarioId,
+        itens: {
+          create: itensCalculados.map((it, idx) => ({
+            nome: it.nome,
+            materialId: it.materialId,
+            pesoG: it.pesoG,
+            tempoImpressaoH: it.tempoImpressaoH,
+            tempoPosProcessamentoH: it.tempoPosProcessamentoH,
+            quantidade: it.quantidade,
+            consumoG: it.consumoG,
+            custoItem: it.custoItem,
+            ordem: idx,
+            insumos: {
+              create: it.insumosUsados.map((iu) => ({
+                insumoId: iu.insumoId,
+                quantidadePorPeca: iu.quantidadePorPeca,
+                valorUnitarioSnapshot: iu.valorUnitarioSnapshot,
+              })),
+            },
+          })),
+        },
+        custosVariaveisSelecionados: {
+          create: custosVariaveis.map((cv) => ({
+            custoVariavelId: cv.id,
+            valorUnitarioSnapshot: cv.valorUnitario,
+          })),
+        },
       },
-      custosVariaveisSelecionados: {
-        create: custosVariaveis.map((cv) => ({
-          custoVariavelId: cv.id,
-          valorUnitarioSnapshot: cv.valorUnitario,
-        })),
+      include: {
+        itens: { include: { material: true, insumos: { include: { insumo: true } } }, orderBy: { ordem: 'asc' } },
+        custosVariaveisSelecionados: { include: { custoVariavel: true } },
       },
-    },
-    include: {
-      itens: { include: { material: true, insumos: { include: { insumo: true } } }, orderBy: { ordem: 'asc' } },
-      custosVariaveisSelecionados: { include: { custoVariavel: true } },
-    },
+    });
   });
 
   return { orcamento, resultado, aviso: avisoEstoque(itensCalculados) };

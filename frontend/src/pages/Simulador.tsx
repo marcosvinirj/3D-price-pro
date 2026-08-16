@@ -15,6 +15,7 @@ import type {
 } from '../lib/types';
 import { Alerta, Button, Card, DuracaoInput, Field, Input, gramas, pct, Select } from '../components/ui';
 import { useMoeda } from '../lib/moeda';
+import { useCreditos, CUSTO_ORCAMENTO } from '../lib/creditos';
 
 /** Um insumo selecionado numa peca, com a quantidade TOTAL usada nela (número final). */
 interface ItemInsumoForm {
@@ -191,6 +192,7 @@ interface OrcamentoParaEditar {
 
 export function SimuladorPage() {
   const { fmt, codigoAtual } = useMoeda();
+  const { saldo, recarregar: recarregarCreditos } = useCreditos();
   const navegar = useNavigate();
   const [searchParams] = useSearchParams();
   const orcamentoIdEdicao = searchParams.get('orcamento');
@@ -389,6 +391,7 @@ export function SimuladorPage() {
         return;
       }
       const r = await api.post<RespostaOrcamentoSalvo>('/orcamentos', input);
+      recarregarCreditos(); // criar orcamento consome credito — atualiza o saldo no topo
       setMsgSalvo(`Orçamento #${r.orcamento.id} salvo${r.aviso ? ` — ${r.aviso}` : ''}.`);
       setSalvo({
         id: r.orcamento.id,
@@ -398,7 +401,13 @@ export function SimuladorPage() {
         precoCobrado: r.orcamento.precoCobrado,
       });
     } catch (e) {
-      setErro(e instanceof ApiError ? e.message : 'Erro ao salvar orçamento');
+      setErro(
+        e instanceof ApiError && e.status === 402
+          ? 'Créditos insuficientes pra salvar este orçamento. Veja a página de Créditos pra recarregar.'
+          : e instanceof ApiError
+            ? e.message
+            : 'Erro ao salvar orçamento',
+      );
     } finally {
       setSalvando(false);
     }
@@ -406,7 +415,19 @@ export function SimuladorPage() {
 
   async function baixarPdf(id: number) {
     const q = codigoAtual !== 'EUR' ? `?moeda=${codigoAtual}` : '';
-    await api.baixar(`/orcamentos/${id}/pdf${q}`, `orcamento-${String(id).padStart(4, '0')}.pdf`);
+    try {
+      await api.baixar(`/orcamentos/${id}/pdf${q}`, `orcamento-${String(id).padStart(4, '0')}.pdf`);
+      recarregarCreditos();
+    } catch (e) {
+      setErro(
+        e instanceof ApiError && e.status === 402
+          ? 'Créditos insuficientes para gerar o PDF. Veja a página de Créditos pra recarregar.'
+          : e instanceof ApiError
+            ? e.message
+            : 'Erro ao gerar PDF',
+      );
+      throw e;
+    }
   }
 
   /** Baixa o PDF e abre o WhatsApp do cliente com um resumo pronto para enviar. */
@@ -742,7 +763,7 @@ export function SimuladorPage() {
           {msgSalvo && <div className="mt-3"><Alerta tipo="sucesso">{msgSalvo}</Alerta></div>}
           {salvo && (
             <div className="mt-3 flex flex-wrap gap-2">
-              <Button variante="secundario" onClick={() => baixarPdf(salvo.id)}>
+              <Button variante="secundario" onClick={() => baixarPdf(salvo.id).catch(() => {})}>
                 Baixar PDF
               </Button>
               <Button variante="secundario" onClick={() => enviarWhatsApp(salvo)}>
@@ -831,11 +852,26 @@ export function SimuladorPage() {
                       {sim && !sim.estoqueSuficiente && <span className="ml-2 text-amber-600">(estoque insuficiente)</span>}
                     </div>
                   </div>
-                  <div className="mt-3 flex justify-end">
-                    <Button onClick={salvar} disabled={salvando || !r.margem.atingeMinima}>
-                      {salvando ? 'Salvando...' : editando ? 'Salvar alterações' : 'Salvar orçamento'}
-                    </Button>
-                  </div>
+                  {(() => {
+                    // Editar nao consome credito (so' criar) — nao bloqueia por saldo.
+                    const semCredito =
+                      !editando && saldo !== null && !saldo.ilimitado && saldo.creditos < CUSTO_ORCAMENTO;
+                    return (
+                      <div className="mt-3 flex items-center justify-end gap-3">
+                        {semCredito && (
+                          <span className="text-xs text-amber-600 dark:text-amber-400">
+                            Saldo insuficiente ({saldo!.creditos} de {CUSTO_ORCAMENTO} créditos) —{' '}
+                            <Link to="/creditos" className="underline">
+                              recarregar
+                            </Link>
+                          </span>
+                        )}
+                        <Button onClick={salvar} disabled={salvando || !r.margem.atingeMinima || semCredito}>
+                          {salvando ? 'Salvando...' : editando ? 'Salvar alterações' : 'Salvar orçamento'}
+                        </Button>
+                      </div>
+                    );
+                  })()}
                 </div>
               );
             })()}

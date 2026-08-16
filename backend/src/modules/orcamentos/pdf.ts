@@ -8,6 +8,7 @@ import { prisma } from '../../db/prisma.js';
 import { naoEncontrado } from '../../http/errors.js';
 import type { ResultadoPrecificacao } from '../../pricing/index.js';
 import { arredondar2 } from '../../pricing/money.js';
+import { debitar, CUSTO_PDF } from '../creditos/service.js';
 
 /** Moeda de exibicao do PDF (valores na base sao convertidos). */
 export interface MoedaPdf {
@@ -57,6 +58,10 @@ export async function gerarPdfOrcamento(
     include: { itens: { include: { material: true }, orderBy: { ordem: 'asc' } } },
   });
   if (!orc) throw naoEncontrado('Orcamento');
+
+  // So' debita DEPOIS de confirmar que o orcamento existe e e' do usuario —
+  // nao cobra por um PDF que nao pode ser gerado.
+  await debitar(usuarioId, CUSTO_PDF, 'consumo_pdf', String(id));
 
   const resultado = JSON.parse(orc.resultadoJson) as ResultadoPrecificacao;
   const fmt = (v: number) => formatar(v, moeda);

@@ -25,6 +25,15 @@ export const conflito = (msg: string) => new AppError(409, msg, 'CONFLITO');
 export const regraDeNegocio = (msg: string, detalhes?: unknown) =>
   new AppError(422, msg, 'REGRA_DE_NEGOCIO', detalhes);
 
+/** 402 Payment Required — saldo de creditos nao cobre a acao. */
+export const creditosInsuficientes = (necessarios: number, disponiveis: number) =>
+  new AppError(
+    402,
+    `Creditos insuficientes: essa acao custa ${necessarios}, voce tem ${disponiveis}.`,
+    'CREDITOS_INSUFICIENTES',
+    { necessarios, disponiveis },
+  );
+
 /** Envolve handlers async para encaminhar erros ao errorHandler. */
 export function asyncHandler(
   fn: (req: Request, res: Response, next: NextFunction) => Promise<unknown>,

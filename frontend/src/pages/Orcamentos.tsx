@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { api, ApiError } from '../lib/api';
 import { Alerta, Button, Card } from '../components/ui';
 import { useMoeda } from '../lib/moeda';
+import { useCreditos } from '../lib/creditos';
 
 interface OrcamentoLista {
   id: number;
@@ -32,6 +33,7 @@ const badge: Record<string, string> = {
 
 export function OrcamentosPage() {
   const { fmt, codigoAtual } = useMoeda();
+  const { recarregar: recarregarCreditos } = useCreditos();
   const navegar = useNavigate();
   const [itens, setItens] = useState<OrcamentoLista[]>([]);
   const [erro, setErro] = useState<string | null>(null);
@@ -81,8 +83,16 @@ export function OrcamentosPage() {
     try {
       const q = codigoAtual !== 'EUR' ? `?moeda=${codigoAtual}` : '';
       await api.baixar(`/orcamentos/${id}/pdf${q}`, `orcamento-${String(id).padStart(4, '0')}.pdf`);
+      recarregarCreditos(); // gerar PDF consome credito — atualiza o saldo no topo
     } catch (e) {
-      setErro(e instanceof ApiError ? e.message : 'Erro ao gerar PDF');
+      setErro(
+        e instanceof ApiError && e.status === 402
+          ? 'Créditos insuficientes para gerar o PDF. Veja a página de Créditos pra recarregar.'
+          : e instanceof ApiError
+            ? e.message
+            : 'Erro ao gerar PDF',
+      );
+      throw e;
     }
   }
 
@@ -202,7 +212,7 @@ export function OrcamentosPage() {
                           </Button>
                         </>
                       )}
-                      <Button variante="secundario" className="px-2 py-1" onClick={() => baixarPdf(o.id)}>
+                      <Button variante="secundario" className="px-2 py-1" onClick={() => baixarPdf(o.id).catch(() => {})}>
                         PDF
                       </Button>
                       <Button variante="secundario" className="px-2 py-1" onClick={() => enviarWhatsApp(o)}>

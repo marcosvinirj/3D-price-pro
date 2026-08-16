@@ -7,6 +7,7 @@
  * Neon do DATABASE_URL, banco "<nome>_test"), recriado pelo globalSetup.
  */
 import request from 'supertest';
+import Stripe from 'stripe';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { criarApp } from '../app.js';
 import { prisma } from '../db/prisma.js';
@@ -26,6 +27,7 @@ const app = criarApp();
 let ctx: {
   materialId: number;
   impressoraId: number;
+  operadorId: number;
   tokenAdmin: string;
   tokenOperador: string;
 };
@@ -45,12 +47,15 @@ async function limparBanco() {
 beforeEach(async () => {
   await limparBanco();
 
+  // Creditos bem folgados (criar orcamento/gerar PDF custam credito agora) —
+  // os testes nao passam pelo /auth/registro (que da' o bonus normal), entao
+  // precisam ja nascer com saldo pra nao esbarrar em CREDITOS_INSUFICIENTES.
   const [admin, operador] = await Promise.all([
     prisma.user.create({
-      data: { email: 'admin@test', senhaHash: await gerarHash('senha1234'), role: 'admin' },
+      data: { email: 'admin@test', senhaHash: await gerarHash('senha1234'), role: 'admin', creditos: 100000 },
     }),
     prisma.user.create({
-      data: { email: 'op@test', senhaHash: await gerarHash('senha1234'), role: 'operador' },
+      data: { email: 'op@test', senhaHash: await gerarHash('senha1234'), role: 'operador', creditos: 100000 },
     }),
   ]);
 
@@ -80,6 +85,7 @@ beforeEach(async () => {
   ctx = {
     materialId: material.id,
     impressoraId: impressora.id,
+    operadorId: operador.id,
     tokenAdmin: assinarToken({ sub: admin.id, email: admin.email, role: 'admin' }),
     tokenOperador: assinarToken({ sub: operador.id, email: operador.email, role: 'operador' }),
   };
@@ -329,5 +335,153 @@ describe('Custos variaveis: selecao persiste e e recuperada ao editar (regra 6)'
         .expect(200)
     ).body.orcamento;
     expect(reeditado.precoFinal).toBe(precoComFrete);
+  });
+});
+
+describe('Creditos: bonus de cadastro, debito ao criar orcamento/gerar PDF, protecao contra saldo negativo', () => {
+  it('registro publico concede o bonus de cadastro, com registro no historico', async () => {
+    const r = await request(app)
+      .post('/auth/registro')
+      .send({ email: 'novo-credito@x.com', senha: 'senha1234' })
+      .expect(201);
+    const saldo = await request(app).get('/creditos').set(auth(r.body.token)).expect(200);
+    expect(saldo.body.creditos).toBe(100);
+    expect(saldo.body.historico).toHaveLength(1);
+    expect(saldo.body.historico[0].tipo).toBe('bonus_cadastro');
+    expect(saldo.body.historico[0].quantidade).toBe(100);
+  });
+
+  it('criar orcamento debita 20 creditos; gerar o PDF debita mais 10', async () => {
+    const antes = (await request(app).get('/creditos').set(auth(ctx.tokenOperador)).expect(200)).body.creditos;
+
+    const orc = (
+      await request(app).post('/orcamentos').set(auth(ctx.tokenOperador)).send(inputOrcamento()).expect(201)
+    ).body.orcamento;
+    const depoisCriar = (await request(app).get('/creditos').set(auth(ctx.tokenOperador)).expect(200)).body
+      .creditos;
+    expect(antes - depoisCriar).toBe(20);
+
+    await request(app).get(`/orcamentos/${orc.id}/pdf`).set(auth(ctx.tokenOperador)).expect(200);
+    const depoisPdf = (await request(app).get('/creditos').set(auth(ctx.tokenOperador)).expect(200)).body
+      .creditos;
+    expect(depoisCriar - depoisPdf).toBe(10);
+  });
+
+  it('saldo insuficiente bloqueia criar orcamento (402) e nao cria nada nem debita nada', async () => {
+    await prisma.user.update({ where: { id: ctx.operadorId }, data: { creditos: 5 } }); // menos que os 20 exigidos
+
+    await request(app).post('/orcamentos').set(auth(ctx.tokenOperador)).send(inputOrcamento()).expect(402);
+
+    const saldo = await prisma.user.findUniqueOrThrow({ where: { id: ctx.operadorId } });
+    expect(saldo.creditos).toBe(5); // inalterado
+    const orcamentos = await prisma.orcamento.findMany({ where: { usuarioId: ctx.operadorId } });
+    expect(orcamentos).toHaveLength(0); // nada foi criado
+  });
+
+  it('saldo insuficiente bloqueia gerar PDF (402), sem debitar', async () => {
+    const orc = (
+      await request(app).post('/orcamentos').set(auth(ctx.tokenOperador)).send(inputOrcamento()).expect(201)
+    ).body.orcamento;
+    await prisma.user.update({ where: { id: ctx.operadorId }, data: { creditos: 5 } }); // menos que os 10 exigidos
+
+    await request(app).get(`/orcamentos/${orc.id}/pdf`).set(auth(ctx.tokenOperador)).expect(402);
+
+    const saldo = await prisma.user.findUniqueOrThrow({ where: { id: ctx.operadorId } });
+    expect(saldo.creditos).toBe(5); // inalterado
+  });
+
+  it('duas criacoes de orcamento simultaneas com saldo pra so uma: so uma vence, credito nunca fica negativo', async () => {
+    await prisma.user.update({ where: { id: ctx.operadorId }, data: { creditos: 20 } }); // exatamente 1 orcamento
+
+    const [r1, r2] = await Promise.all([
+      request(app).post('/orcamentos').set(auth(ctx.tokenOperador)).send(inputOrcamento()),
+      request(app).post('/orcamentos').set(auth(ctx.tokenOperador)).send(inputOrcamento()),
+    ]);
+    expect([r1.status, r2.status].sort()).toEqual([201, 402]);
+
+    const saldo = await prisma.user.findUniqueOrThrow({ where: { id: ctx.operadorId } });
+    expect(saldo.creditos).toBe(0); // debitado uma unica vez, nunca negativo
+  });
+
+  it('conta com creditosIlimitados nunca e debitada, mesmo com saldo zerado', async () => {
+    await prisma.user.update({
+      where: { id: ctx.operadorId },
+      data: { creditos: 0, creditosIlimitados: true },
+    });
+
+    await request(app).post('/orcamentos').set(auth(ctx.tokenOperador)).send(inputOrcamento()).expect(201);
+
+    const saldo = await prisma.user.findUniqueOrThrow({ where: { id: ctx.operadorId } });
+    expect(saldo.creditos).toBe(0); // continua 0 — nao foi debitado
+    const transacoes = await prisma.creditoTransacao.findMany({ where: { usuarioId: ctx.operadorId } });
+    expect(transacoes).toHaveLength(0); // nada registrado — nao houve gasto de verdade
+  });
+});
+
+describe('Webhook do Stripe: credita pacote avulso e e idempotente', () => {
+  const SEGREDO_TESTE = 'whsec_teste_1234567890abcdef'; // mesmo valor de vitest.config.ts
+
+  it('checkout.session.completed (pacote avulso) credita 300; reenviar o MESMO evento nao credita de novo', async () => {
+    // Vincula o operador a um "Customer" Stripe fake — nao precisa existir de
+    // verdade no Stripe, so' resolve o dono do evento (mesma logica usada
+    // pra achar o usuario num webhook real).
+    const customerId = `cus_teste_${ctx.operadorId}`;
+    await prisma.user.update({ where: { id: ctx.operadorId }, data: { stripeCustomerId: customerId } });
+
+    const evento = {
+      id: `evt_teste_${Date.now()}`,
+      object: 'event',
+      type: 'checkout.session.completed',
+      api_version: '2024-06-20',
+      created: Math.floor(Date.now() / 1000),
+      data: {
+        object: {
+          id: 'cs_teste_123',
+          object: 'checkout.session',
+          mode: 'payment',
+          customer: customerId,
+          client_reference_id: String(ctx.operadorId),
+        },
+      },
+    };
+    const payload = JSON.stringify(evento);
+    const assinatura = Stripe.webhooks.generateTestHeaderString({ payload, secret: SEGREDO_TESTE });
+
+    const antes = (await prisma.user.findUniqueOrThrow({ where: { id: ctx.operadorId } })).creditos;
+
+    await request(app)
+      .post('/webhooks/stripe')
+      .set('stripe-signature', assinatura)
+      .set('Content-Type', 'application/json')
+      .send(payload)
+      .expect(200);
+
+    const depois1 = (await prisma.user.findUniqueOrThrow({ where: { id: ctx.operadorId } })).creditos;
+    expect(depois1 - antes).toBe(300);
+
+    // Stripe pode reenviar o mesmo evento (timeout, retry) — nao pode creditar de novo.
+    await request(app)
+      .post('/webhooks/stripe')
+      .set('stripe-signature', assinatura)
+      .set('Content-Type', 'application/json')
+      .send(payload)
+      .expect(200);
+
+    const depois2 = (await prisma.user.findUniqueOrThrow({ where: { id: ctx.operadorId } })).creditos;
+    expect(depois2).toBe(depois1); // inalterado — idempotencia funcionou
+  });
+
+  it('assinatura invalida no webhook e rejeitada (400) — protege contra evento forjado', async () => {
+    const payload = JSON.stringify({
+      id: 'evt_forjado',
+      type: 'checkout.session.completed',
+      data: { object: { mode: 'payment', customer: 'cus_qualquer' } },
+    });
+    await request(app)
+      .post('/webhooks/stripe')
+      .set('stripe-signature', 't=123,v1=assinatura-forjada-nao-bate')
+      .set('Content-Type', 'application/json')
+      .send(payload)
+      .expect(400);
   });
 });

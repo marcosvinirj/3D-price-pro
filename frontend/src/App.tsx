@@ -12,6 +12,7 @@ import { CustosVariaveisPage } from './pages/CustosVariaveis';
 import { InsumosPage } from './pages/Insumos';
 import { ConfiguracaoPage } from './pages/Configuracao';
 import { MoedasPage } from './pages/Moedas';
+import { CreditosPage } from './pages/Creditos';
 
 /** Bloqueia rotas quando nao autenticado. */
 function Protegido({ children }: { children: JSX.Element }) {
@@ -39,6 +40,7 @@ export function App() {
         <Route path="/custos-fixos" element={<CustosFixosPage />} />
         <Route path="/custos-variaveis" element={<CustosVariaveisPage />} />
         <Route path="/insumos" element={<InsumosPage />} />
+        <Route path="/creditos" element={<CreditosPage />} />
         <Route path="/moedas" element={<MoedasPage />} />
         <Route path="/configuracao" element={<ConfiguracaoPage />} />
       </Route>

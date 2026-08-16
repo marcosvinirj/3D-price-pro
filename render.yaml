@@ -13,6 +13,21 @@ services:
         generateValue: true
       - key: JWT_EXPIRES_IN
         value: 7d
+      # Stripe (creditos) — valores reais preenchidos manualmente no painel do
+      # Render (Environment), nunca no repo. Ver backend/.env pros valores de
+      # teste ja em uso (gerados por src/scripts/stripeSetup.ts e
+      # stripeWebhookSetup.ts) — troque por chaves "live" so' ao cobrar de
+      # verdade.
+      - key: STRIPE_SECRET_KEY
+        sync: false
+      - key: STRIPE_PRICE_ASSINATURA
+        sync: false
+      - key: STRIPE_PRICE_PACOTE
+        sync: false
+      - key: STRIPE_WEBHOOK_SECRET
+        sync: false
+      - key: FRONTEND_URL
+        value: https://precificacao3d-frontend.onrender.com
 
   - type: web
     name: precificacao3d-frontend

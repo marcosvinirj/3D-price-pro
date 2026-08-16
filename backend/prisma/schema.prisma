@@ -25,6 +25,56 @@ model User {
   insumos         Insumo[]
   moedas          Moeda[]
   configuracao    Configuracao?
+
+  // Creditos (regra de negocio: criar orcamento custa 20cr, gerar PDF 10cr).
+  // `creditos` e' o saldo materializado (leitura rapida); CreditoTransacao
+  // guarda o historico de cada mudanca, pra auditoria. `creditosIlimitados`
+  // e' uma isencao manual (contas internas/de teste) — nunca debita, setada
+  // so' por script administrativo, sem rota publica pra isso.
+  creditos           Int                @default(0)
+  creditosIlimitados Boolean            @default(false)
+  stripeCustomerId   String?            @unique
+  creditoTransacoes  CreditoTransacao[]
+  assinatura         Assinatura?
+}
+
+// Historico de creditos ganhos/gastos — o saldo materializado fica em
+// User.creditos (leitura rapida), mas toda mudanca fica registrada aqui.
+model CreditoTransacao {
+  id         Int      @id @default(autoincrement())
+  quantidade Int // positivo = ganho (bonus, assinatura, pacote), negativo = gasto (orcamento, pdf)
+  // bonus_cadastro | assinatura_mensal | pacote_avulso | consumo_orcamento | consumo_pdf
+  tipo       String
+  // contexto de onde veio/foi: orcamentoId, stripeEventId... (livre, so' pra auditoria/debug)
+  referencia String?
+  criadoEm   DateTime @default(now())
+
+  usuarioId Int
+  usuario   User @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+
+  @@index([usuarioId])
+}
+
+// Estado da assinatura Stripe do usuario (no maximo uma por usuario).
+model Assinatura {
+  id                    Int      @id @default(autoincrement())
+  stripeSubscriptionId  String   @unique
+  stripePriceId         String
+  status                String // active | past_due | canceled | incomplete | ...
+  periodoAtualFim       DateTime
+  criadoEm              DateTime @default(now())
+  atualizadoEm          DateTime @updatedAt
+
+  usuarioId Int  @unique
+  usuario   User @relation(fields: [usuarioId], references: [id], onDelete: Cascade)
+}
+
+// Idempotencia de webhooks do Stripe — o Stripe pode reenviar o mesmo evento
+// (retry de rede, etc.); sem isso, um reenvio creditaria/processaria duas vezes.
+model StripeEventoProcessado {
+  id           String   @id // o proprio Stripe event id (evt_...)
+  tipo         String
+  processadoEm DateTime @default(now())
 }
 
 model Material {

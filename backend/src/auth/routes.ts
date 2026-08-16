@@ -7,6 +7,7 @@ import { validarBody } from '../http/validate.js';
 import { usuarioOpcional } from './middleware.js';
 import { gerarHash, conferirSenha } from './password.js';
 import { assinarToken } from './jwt.js';
+import { BONUS_CADASTRO } from '../modules/creditos/service.js';
 
 export const authRouter = Router();
 
@@ -52,8 +53,14 @@ authRouter.post(
     // qualquer outro auto-cadastro vira operador, ignorando o role pedido.
     const role = bootstrap ? 'admin' : solicitanteEhAdmin ? (papelSolicitado ?? 'operador') : 'operador';
 
+    // Bonus de cadastro ja' entra no create (linha nova, sem risco de corrida
+    // contra si mesma) + um registro no historico pra bater com o resto da
+    // auditoria de creditos.
     const user = await prisma.user.create({
-      data: { email, senhaHash: await gerarHash(senha), role },
+      data: { email, senhaHash: await gerarHash(senha), role, creditos: BONUS_CADASTRO },
+    });
+    await prisma.creditoTransacao.create({
+      data: { usuarioId: user.id, quantidade: BONUS_CADASTRO, tipo: 'bonus_cadastro' },
     });
 
     const token = assinarToken({ sub: user.id, email: user.email, role: user.role });

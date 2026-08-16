@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { BrowserRouter } from 'react-router-dom';
 import { AuthProvider } from './lib/auth';
 import { MoedaProvider } from './lib/moeda';
+import { CreditosProvider } from './lib/creditos';
 import { TemaProvider } from './lib/theme';
 import { App } from './App';
 import './index.css';
@@ -13,7 +14,9 @@ createRoot(document.getElementById('root')!).render(
       <BrowserRouter>
         <AuthProvider>
           <MoedaProvider>
-            <App />
+            <CreditosProvider>
+              <App />
+            </CreditosProvider>
           </MoedaProvider>
         </AuthProvider>
       </BrowserRouter>

@@ -1,7 +1,8 @@
 import { useState } from 'react';
-import { NavLink, Outlet, useLocation } from 'react-router-dom';
+import { Link, NavLink, Outlet, useLocation } from 'react-router-dom';
 import { useAuth } from '../lib/auth';
 import { useMoeda } from '../lib/moeda';
+import { useCreditos } from '../lib/creditos';
 import { useTema } from '../lib/theme';
 import { Logo } from './ui';
 import {
@@ -20,6 +21,7 @@ import {
   IconPrinter,
   IconSpool,
   IconSun,
+  IconWallet,
 } from './icons';
 
 type Item = { to: string; label: string; end?: boolean; icon: (p: any) => JSX.Element };
@@ -46,6 +48,7 @@ const GRUPOS: { titulo: string; itens: Item[] }[] = [
   {
     titulo: 'Ajustes',
     itens: [
+      { to: '/creditos', label: 'Créditos', icon: IconWallet },
       { to: '/moedas', label: 'Moedas', icon: IconCoins },
       { to: '/configuracao', label: 'Configuração', icon: IconGear },
     ],
@@ -59,6 +62,37 @@ function TituloPagina() {
     todos.find((i) => (i.end ? pathname === i.to : pathname.startsWith(i.to) && i.to !== '/')) ??
     todos.find((i) => i.to === '/');
   return <span>{atual?.label ?? 'Price 3D'}</span>;
+}
+
+/** Indicador de creditos no topo (estilo "⚡100") + atalho pra assinar. */
+function WidgetCreditos() {
+  const { saldo } = useCreditos();
+  const baixo = !saldo?.ilimitado && saldo !== null && saldo.creditos < 20; // menos que 1 orcamento
+
+  return (
+    <div className="flex items-center gap-2">
+      <Link
+        to="/creditos"
+        title={saldo?.ilimitado ? 'Conta isenta — créditos ilimitados' : 'Ver créditos'}
+        className={`inline-flex h-9 items-center gap-1.5 rounded-lg border px-3 text-sm font-semibold transition ${
+          baixo
+            ? 'border-amber-300 bg-amber-50 text-amber-700 hover:bg-amber-100 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300'
+            : 'border-slate-200 bg-white text-slate-700 hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-200 dark:hover:bg-slate-700'
+        }`}
+      >
+        <IconBolt className={baixo ? 'text-amber-500' : 'text-brand-500'} />
+        {saldo?.ilimitado ? '∞' : (saldo?.creditos ?? '—')}
+      </Link>
+      {!saldo?.assinaturaAtiva && !saldo?.ilimitado && (
+        <Link
+          to="/creditos"
+          className="hidden h-9 items-center rounded-lg bg-brand-gradient px-3 text-sm font-semibold text-white shadow-glow transition hover:brightness-110 sm:inline-flex"
+        >
+          Assinar
+        </Link>
+      )}
+    </div>
+  );
 }
 
 function ThemeToggle() {
@@ -212,6 +246,7 @@ export function Layout() {
             </h1>
           </div>
           <div className="flex items-center gap-2">
+            <WidgetCreditos />
             {seletorMoeda}
             <ThemeToggle />
           </div>
