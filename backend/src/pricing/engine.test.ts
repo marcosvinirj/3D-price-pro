@@ -109,6 +109,63 @@ describe('custos variaveis (soma dos itens selecionados)', () => {
   });
 });
 
+describe('custo repassado (custos variaveis e insumos) NAO leva provisao de falha nem margem', () => {
+  it('custo variavel (ex.: frete) aumenta o preco final pelo seu valor EXATO, sem markup', () => {
+    const semFrete = precificar(entradaBase());
+    const comFrete = precificar(
+      entradaBase({
+        custos: {
+          precoKwh: 0.95,
+          valorHoraTrabalho: 20,
+          custosFixosMensais: 1000,
+          horasProdutivasMes: 400,
+          custoVariavel: 3.5,
+        },
+      }),
+    );
+    // taxaFalha=10% e margemLucro=50% da entradaBase NAO incidem sobre os
+    // 3.50 de frete — o preco bruto sobe exatamente 3.50, nao 3.50*1.1*1.5=5.775.
+    expect(comFrete.precoBruto - semFrete.precoBruto).toBeCloseTo(3.5, 4);
+  });
+
+  it('custoTotal (exibicao) soma tudo; custoComFalha e nucleo-com-falha + repasse cheio (sem markup no repasse)', () => {
+    const r = precificar(
+      entradaBase({
+        custos: {
+          precoKwh: 0.95,
+          valorHoraTrabalho: 20,
+          custosFixosMensais: 1000,
+          horasProdutivasMes: 400,
+          custoVariavel: 3.5,
+        },
+      }),
+    );
+    expect(r.custos.custoTotal).toBeCloseTo(34.56, 4); // 31.06 (nucleo) + 3.5
+    expect(r.custos.custoComFalha).toBeCloseTo(37.666, 4); // 31.06*1.1 + 3.5
+  });
+
+  it('insumo (ex.: argola) tambem aumenta o preco final pelo valor exato, sem markup', () => {
+    const semInsumo = precificarMultiplo(entradaMultiplaBase());
+    const comInsumo = precificarMultiplo(
+      entradaMultiplaBase({
+        itens: [
+          {
+            peca: {
+              pesoG: 50,
+              tempoImpressaoH: 4,
+              tempoPosProcessamentoH: 0.5,
+              quantidade: 1,
+              insumos: [{ valorUnitario: 0.07, quantidade: 1 }],
+            },
+            material: { precoKg: 120, taxaDesperdicio: 0.05 },
+          },
+        ],
+      }),
+    );
+    expect(comInsumo.precoBruto - semInsumo.precoBruto).toBeCloseTo(0.07, 4);
+  });
+});
+
 describe('aplicacao de falha e margem', () => {
   it('aplica taxa de falha e margem sobre o custo total', () => {
     const r = precificar(entradaBase());

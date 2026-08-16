@@ -803,10 +803,10 @@ export function SimuladorPage() {
               <Linha rotulo="Mão de obra" valor={r.custos.maoDeObra} fmt={fmt} />
               <Linha rotulo="Custo fixo rateado" valor={r.custos.custoFixoRateado} fmt={fmt} />
               {r.custos.custoInsumos > 0 && (
-                <Linha rotulo="Insumos" valor={r.custos.custoInsumos} fmt={fmt} />
+                <Linha rotulo="Insumos (repasse, sem margem)" valor={r.custos.custoInsumos} fmt={fmt} />
               )}
               {r.custos.custoVariavel > 0 && (
-                <Linha rotulo="Custos variáveis" valor={r.custos.custoVariavel} fmt={fmt} />
+                <Linha rotulo="Custos variáveis (repasse, sem margem)" valor={r.custos.custoVariavel} fmt={fmt} />
               )}
               <div className="my-2 border-t border-slate-100 dark:border-slate-800" />
               <Linha rotulo="Custo total" valor={r.custos.custoTotal} fmt={fmt} forte />
@@ -871,9 +871,13 @@ function InteligenciaNegocio({
   fmt: (v: number) => string;
 }) {
   const custoComFalha = r.custos.custoComFalha;
+  // So' o custo NUCLEO (sem frete/insumos, repassados sem markup — ver
+  // engine.ts) leva margem; replica exatamente a formula do backend
+  // (finalizarPreco) pra sugerir preco minimo/recomendado corretamente.
+  const custoNucleoComFalha = custoComFalha - r.custos.custoVariavel - r.custos.custoInsumos;
   const margemRecomendada = Math.max(0.5, r.margem.minima + 0.3);
-  const precoMinimo = custoComFalha * (1 + r.margem.minima);
-  const precoRecomendado = custoComFalha * (1 + margemRecomendada);
+  const precoMinimo = custoComFalha + custoNucleoComFalha * r.margem.minima;
+  const precoRecomendado = custoComFalha + custoNucleoComFalha * margemRecomendada;
   const lucroPorHora = tempoImpressaoH > 0 ? r.margem.lucro / tempoImpressaoH : 0;
 
   const alertas: { tipo: 'erro' | 'aviso'; msg: string }[] = [];

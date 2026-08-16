@@ -12,12 +12,22 @@
  *   Mao de Obra        = tempoPosProcessamentoH * valorHoraTrabalho
  *   Custo Fixo/Hora    = custosFixosMensais / horasProdutivasMes
  *   Custo Fixo Rateado = Custo Fixo/Hora * tempoImpressaoH
+ *   Custo Nucleo       = Material + Energia + Depreciacao + Mao de Obra + Custo Fixo Rateado
  *   Custo Insumos      = soma(insumo.valorUnitario * insumo.quantidade)
- *   Custo Total        = soma dos acima
- *   Custo c/ Falha     = Custo Total * (1 + taxaFalha)
- *   Preco (bruto)      = Custo c/ Falha * (1 + margemLucro)
+ *   Custo Repassado    = Custo Insumos + Custo Variavel (frete, embalagem...)
+ *   Custo Total        = Custo Nucleo + Custo Repassado  (exibicao, sem markup)
+ *   Custo c/ Falha     = Custo Nucleo * (1 + taxaFalha) + Custo Repassado
+ *   Preco (bruto)      = Custo c/ Falha + [Custo Nucleo * (1 + taxaFalha)] * margemLucro
  *   Preco Final        = arredondamento(Preco bruto)
  *   Preco Cobrado      = Preco Final - desconto (desconto so sobre o final)
+ *
+ * Provisao de falha e margem de lucro incidem SO' sobre o custo nucleo
+ * (material, energia, depreciacao, mao de obra, custo fixo) — o que de fato
+ * se perde/repete numa tentativa de impressao malsucedida. Insumos e custos
+ * variaveis (frete, embalagem, argola, escovinha...) sao REPASSADOS pelo
+ * valor cheio, sem markup: nao faz sentido provisionar "falha" sobre frete
+ * (uma peca que falhou nao e' enviada nem embalada), e por decisao explicita
+ * do usuario a margem tambem nao incide sobre custo repassado.
  *
  * `quantidade` e' o numero de unidades identicas que uma peca representa
  * (ex.: 25 canudos impressos juntos na mesma leva). E' puramente
@@ -167,19 +177,25 @@ function calcularComponentesPeca(
 }
 
 /**
- * Parte final do calculo: recebe um custo total ja somado (de uma ou varias
- * pecas) e aplica provisao de falha, margem, arredondamento, desconto e
- * detalhamento de margem. Compartilhada por `calcular` e `calcularMultiplo`.
+ * Parte final do calculo: recebe o custo NUCLEO (material/energia/
+ * depreciacao/mao de obra/custo fixo — de uma ou varias pecas) separado do
+ * custo REPASSADO (insumos + custos variaveis, sem markup) e aplica provisao
+ * de falha, margem, arredondamento, desconto e detalhamento de margem.
+ * Compartilhada por `calcular` e `calcularMultiplo`.
  */
 function finalizarPreco(
-  custoTotal: number,
-  custoVariavel: number,
+  custoNucleo: number,
+  custoRepassado: number,
   parametros: ParametrosEntrada,
   desconto: EntradaPrecificacao['desconto'],
   arredondamento: EstrategiaArredondamento,
 ): Omit<ResultadoPrecificacao, 'custos'> & { custoComFalha: number } {
-  const custoComFalha = custoTotal * (1 + parametros.taxaFalha);
-  const precoBruto = custoComFalha * (1 + parametros.margemLucro);
+  // Falha e margem incidem so' sobre o nucleo — custo repassado (frete,
+  // embalagem, insumos) entra pelo valor cheio, sem markup (ver doc do topo
+  // do arquivo).
+  const custoNucleoComFalha = custoNucleo * (1 + parametros.taxaFalha);
+  const custoComFalha = custoNucleoComFalha + custoRepassado;
+  const precoBruto = custoComFalha + custoNucleoComFalha * parametros.margemLucro;
   const precoFinal = aplicarArredondamento(precoBruto, arredondamento);
 
   // Desconto incide APENAS sobre o preco final, nunca sobre os custos (regra 7).
@@ -200,12 +216,17 @@ function finalizarPreco(
     };
   }
 
-  // Margem real: lucro sobre o custo (com provisao de falha) apos o que foi cobrado.
+  // Margem real: lucro sobre o custo TOTAL (nucleo com falha + repassado)
+  // apos o que foi cobrado — custo repassado conta aqui mesmo sem markup,
+  // porque ainda e' dinheiro que sai do bolso (frete, embalagem...).
   const lucro = precoCobrado - custoComFalha;
   const margemReal = custoComFalha > 0 ? lucro / custoComFalha : 0;
 
   // Margem do preco de tabela (antes do desconto) — usada para a regra 2,
-  // pois o arredondamento pode ter reduzido a margem planejada.
+  // pois o arredondamento pode ter reduzido a margem planejada. E' sobre o
+  // custo TOTAL (com repassado), entao um pedido com muito custo repassado
+  // relativo ao nucleo naturalmente tem margem "aparente" menor — reflete a
+  // realidade (menos sobra proporcionalmente), nao e' um erro de calculo.
   const margemAposArredondamento = custoComFalha > 0 ? precoFinal / custoComFalha - 1 : 0;
   const atingeMinima = margemAposArredondamento >= parametros.margemMinima - 1e-9;
 
@@ -234,18 +255,15 @@ export function calcular(entrada: EntradaPrecificacao): ResultadoPrecificacao {
   const { peca, material, impressora, custos, parametros } = entrada;
   const c = calcularComponentesPeca(peca, material, impressora, custos);
   const custoVariavel = custos.custoVariavel;
-  const custoTotal =
-    c.custoMaterial +
-    c.custoEnergia +
-    c.depreciacao +
-    c.maoDeObra +
-    c.custoFixoRateado +
-    c.custoInsumos +
-    custoVariavel;
+  // Nucleo (leva markup) vs repassado (insumos + variaveis, sem markup —
+  // ver doc do topo do arquivo e de `finalizarPreco`).
+  const custoNucleo = c.custoMaterial + c.custoEnergia + c.depreciacao + c.maoDeObra + c.custoFixoRateado;
+  const custoRepassado = c.custoInsumos + custoVariavel;
+  const custoTotal = custoNucleo + custoRepassado; // exibicao: soma bruta, sem markup
 
   const { custoComFalha, ...resto } = finalizarPreco(
-    custoTotal,
-    custoVariavel,
+    custoNucleo,
+    custoRepassado,
     parametros,
     entrada.desconto,
     entrada.arredondamento,
@@ -338,11 +356,17 @@ export function calcularMultiplo(entrada: EntradaPrecificacaoMultipla): Resultad
   // bit-a-bit identico a `calcular` para o "mesmo" input de peca unica,
   // ainda que a diferenca seja sub-centavo e irrelevante na pratica).
   const somaItens = itens.reduce((s, i) => s + i.custoItemTotal, 0);
-  const custoTotal = somaItens + custoVariavel;
+  const somaInsumos = itens.reduce((s, i) => s + i.custoInsumos, 0);
+  // custoItemTotal (por peca) ja' inclui custoInsumos — tira aqui pra
+  // separar nucleo (leva markup) de repassado (insumos + variaveis, sem
+  // markup — ver doc do topo do arquivo e de `finalizarPreco`).
+  const custoNucleo = somaItens - somaInsumos;
+  const custoRepassado = somaInsumos + custoVariavel;
+  const custoTotal = somaItens + custoVariavel; // exibicao: soma bruta, sem markup
 
   const { custoComFalha, ...resto } = finalizarPreco(
-    custoTotal,
-    custoVariavel,
+    custoNucleo,
+    custoRepassado,
     entrada.parametros,
     entrada.desconto,
     entrada.arredondamento,
@@ -355,7 +379,7 @@ export function calcularMultiplo(entrada: EntradaPrecificacaoMultipla): Resultad
     maoDeObra: arredondarN(itens.reduce((s, i) => s + i.maoDeObra, 0), 4),
     custoFixoRateado: arredondarN(itens.reduce((s, i) => s + i.custoFixoRateado, 0), 4),
     custoVariavel: arredondarN(custoVariavel, 4),
-    custoInsumos: arredondarN(itens.reduce((s, i) => s + i.custoInsumos, 0), 4),
+    custoInsumos: arredondarN(somaInsumos, 4),
     custoTotal: arredondarN(custoTotal, 4),
     custoComFalha,
   };

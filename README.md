@@ -127,11 +127,21 @@ Depreciação        = (valorAquisicao / vidaUtilH) × tempoImpressaoH
 Mão de Obra        = tempoPosProcessamentoH × valorHoraTrabalho
 Custo Fixo/Hora    = custosFixosMensais / horasProdutivasMes
 Custo Fixo Rateado = Custo Fixo/Hora × tempoImpressaoH
+Custo Núcleo       = Material + Energia + Depreciação + Mão de Obra + Custo Fixo Rateado
+Custo Insumos      = Σ (insumo.valorUnitario × insumo.quantidade) — argola, escovinha…
 Custo Variável     = Σ dos custos variáveis selecionados (embalagem, frete…)
-Custo Total        = soma dos acima
-Preço Final        = arredondar( Custo Total × (1 + taxaFalha) × (1 + margemLucro) )
+Custo Repassado    = Custo Insumos + Custo Variável
+Custo Total        = Custo Núcleo + Custo Repassado           (exibição, sem markup)
+Preço Final        = arredondar( Custo Núcleo × (1+taxaFalha) × (1+margemLucro) + Custo Repassado )
 Preço Cobrado      = Preço Final − desconto
 ```
+
+Provisão de falha e margem de lucro incidem **só sobre o Custo Núcleo**
+(material, energia, depreciação, mão de obra, custo fixo). Insumos e custos
+variáveis (frete, embalagem, argola…) são **repassados pelo valor cheio, sem
+markup** — decisão de negócio: não faz sentido provisionar falha sobre frete
+(uma peça que falhou não é enviada), e a margem não incide sobre custo
+repassado.
 
 ## Regras de negócio implementadas
 
