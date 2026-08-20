@@ -128,20 +128,24 @@ Mão de Obra        = tempoPosProcessamentoH × valorHoraTrabalho
 Custo Fixo/Hora    = custosFixosMensais / horasProdutivasMes
 Custo Fixo Rateado = Custo Fixo/Hora × tempoImpressaoH
 Custo Núcleo       = Material + Energia + Depreciação + Mão de Obra + Custo Fixo Rateado
-Custo Insumos      = Σ (insumo.valorUnitario × insumo.quantidade) — argola, escovinha…
-Custo Variável     = Σ dos custos variáveis selecionados (embalagem, frete…)
+Custo Insumos      = Σ (insumo.valorUnitario × insumo.quantidade) — argola, escovinha, lâmpada…
+Custo Variável     = Σ dos custos variáveis selecionados (embalagem, frete, etiqueta…)
 Custo Repassado    = Custo Insumos + Custo Variável
 Custo Total        = Custo Núcleo + Custo Repassado           (exibição, sem markup)
-Preço Final        = arredondar( Custo Núcleo × (1+taxaFalha) × (1+margemLucro) + Custo Repassado )
+Preço Final        = arredondar( (Custo Núcleo × (1+taxaFalha) + Custo Insumos) × (1+margemLucro) + Custo Variável )
 Preço Cobrado      = Preço Final − desconto
 ```
 
-Provisão de falha e margem de lucro incidem **só sobre o Custo Núcleo**
-(material, energia, depreciação, mão de obra, custo fixo). Insumos e custos
-variáveis (frete, embalagem, argola…) são **repassados pelo valor cheio, sem
-markup** — decisão de negócio: não faz sentido provisionar falha sobre frete
-(uma peça que falhou não é enviada), e a margem não incide sobre custo
-repassado.
+Provisão de falha incide **só sobre o Custo Núcleo** (material, energia,
+depreciação, mão de obra, custo fixo) — o que de fato se perde numa
+impressão malsucedida; insumos ficam intactos no estoque e custo variável só
+é gasto quando a peça de fato sai.
+
+Margem de lucro incide sobre o **Custo Núcleo (com falha) e sobre os
+Insumos** — insumo (argola, lâmpada, saco zip…) vira parte física do produto
+final, igual ao filamento, e merece o mesmo markup. **Custo Variável** (frete,
+embalagem, etiqueta) é logística pura, **repassado pelo valor cheio, sem
+markup** — decisão de negócio: não faz sentido lucrar em cima do correio.
 
 ## Regras de negócio implementadas
 

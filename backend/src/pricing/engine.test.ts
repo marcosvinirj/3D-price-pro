@@ -109,7 +109,7 @@ describe('custos variaveis (soma dos itens selecionados)', () => {
   });
 });
 
-describe('custo repassado (custos variaveis e insumos) NAO leva provisao de falha nem margem', () => {
+describe('custo variavel (frete, embalagem) e repasse puro: NAO leva provisao de falha nem margem', () => {
   it('custo variavel (ex.: frete) aumenta o preco final pelo seu valor EXATO, sem markup', () => {
     const semFrete = precificar(entradaBase());
     const comFrete = precificar(
@@ -143,8 +143,10 @@ describe('custo repassado (custos variaveis e insumos) NAO leva provisao de falh
     expect(r.custos.custoTotal).toBeCloseTo(34.56, 4); // 31.06 (nucleo) + 3.5
     expect(r.custos.custoComFalha).toBeCloseTo(37.666, 4); // 31.06*1.1 + 3.5
   });
+});
 
-  it('insumo (ex.: argola) tambem aumenta o preco final pelo valor exato, sem markup', () => {
+describe('insumo e componente do produto: leva margem, mas NAO leva provisao de falha', () => {
+  it('insumo (ex.: argola) aumenta o preco final pelo valor cheio MAIS a margem sobre ele', () => {
     const semInsumo = precificarMultiplo(entradaMultiplaBase());
     const comInsumo = precificarMultiplo(
       entradaMultiplaBase({
@@ -162,7 +164,31 @@ describe('custo repassado (custos variaveis e insumos) NAO leva provisao de falh
         ],
       }),
     );
-    expect(comInsumo.precoBruto - semInsumo.precoBruto).toBeCloseTo(0.07, 4);
+    // margemLucro=50% da entradaMultiplaBase incide sobre o insumo (e'
+    // componente do produto) — 0.07 * (1 + 0.5) = 0.105. A taxaFalha (10%)
+    // NAO incide (insumo nao se perde numa impressao malsucedida).
+    expect(comInsumo.precoBruto - semInsumo.precoBruto).toBeCloseTo(0.105, 4);
+  });
+
+  it('insumo NAO leva provisao de falha (custoComFalha sobe pelo valor exato do insumo)', () => {
+    const semInsumo = precificarMultiplo(entradaMultiplaBase());
+    const comInsumo = precificarMultiplo(
+      entradaMultiplaBase({
+        itens: [
+          {
+            peca: {
+              pesoG: 50,
+              tempoImpressaoH: 4,
+              tempoPosProcessamentoH: 0.5,
+              quantidade: 1,
+              insumos: [{ valorUnitario: 0.07, quantidade: 1 }],
+            },
+            material: { precoKg: 120, taxaDesperdicio: 0.05 },
+          },
+        ],
+      }),
+    );
+    expect(comInsumo.custos.custoComFalha - semInsumo.custos.custoComFalha).toBeCloseTo(0.07, 4);
   });
 });
 

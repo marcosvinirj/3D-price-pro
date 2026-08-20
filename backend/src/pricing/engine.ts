@@ -16,18 +16,25 @@
  *   Custo Insumos      = soma(insumo.valorUnitario * insumo.quantidade)
  *   Custo Repassado    = Custo Insumos + Custo Variavel (frete, embalagem...)
  *   Custo Total        = Custo Nucleo + Custo Repassado  (exibicao, sem markup)
- *   Custo c/ Falha     = Custo Nucleo * (1 + taxaFalha) + Custo Repassado
- *   Preco (bruto)      = Custo c/ Falha + [Custo Nucleo * (1 + taxaFalha)] * margemLucro
+ *   Nucleo c/ Falha    = Custo Nucleo * (1 + taxaFalha)
+ *   Custo c/ Falha     = Nucleo c/ Falha + Custo Repassado
+ *   Base c/ Margem     = Nucleo c/ Falha + Custo Insumos
+ *   Preco (bruto)      = Custo c/ Falha + Base c/ Margem * margemLucro
  *   Preco Final        = arredondamento(Preco bruto)
  *   Preco Cobrado      = Preco Final - desconto (desconto so sobre o final)
  *
- * Provisao de falha e margem de lucro incidem SO' sobre o custo nucleo
- * (material, energia, depreciacao, mao de obra, custo fixo) — o que de fato
- * se perde/repete numa tentativa de impressao malsucedida. Insumos e custos
- * variaveis (frete, embalagem, argola, escovinha...) sao REPASSADOS pelo
- * valor cheio, sem markup: nao faz sentido provisionar "falha" sobre frete
- * (uma peca que falhou nao e' enviada nem embalada), e por decisao explicita
- * do usuario a margem tambem nao incide sobre custo repassado.
+ * Provisao de falha incide SO' sobre o custo nucleo (material, energia,
+ * depreciacao, mao de obra, custo fixo) — o que de fato se perde/repete numa
+ * tentativa de impressao malsucedida. Insumos ficam intactos no estoque pra
+ * proxima peca se a impressao falhar, e custo variavel (frete, embalagem) so'
+ * e' gasto quando a peca de fato sai — nenhum dos dois repete com a falha.
+ *
+ * Margem de lucro incide sobre o custo nucleo (com falha) E sobre os
+ * insumos: insumo (argola, lampada, saco zip...) vira parte FISICA do
+ * produto final, igual ao filamento — merece o mesmo markup que o resto da
+ * producao. Custo variavel (frete, embalagem, etiqueta) e' logistica pura,
+ * repassada pelo valor cheio, sem markup: nao faz sentido lucrar em cima do
+ * correio (decisao explicita do usuario).
  *
  * `quantidade` e' o numero de unidades identicas que uma peca representa
  * (ex.: 25 canudos impressos juntos na mesma leva). E' puramente
@@ -178,24 +185,28 @@ function calcularComponentesPeca(
 
 /**
  * Parte final do calculo: recebe o custo NUCLEO (material/energia/
- * depreciacao/mao de obra/custo fixo — de uma ou varias pecas) separado do
- * custo REPASSADO (insumos + custos variaveis, sem markup) e aplica provisao
- * de falha, margem, arredondamento, desconto e detalhamento de margem.
- * Compartilhada por `calcular` e `calcularMultiplo`.
+ * depreciacao/mao de obra/custo fixo — de uma ou varias pecas) separado de
+ * INSUMOS (componente do produto, leva margem mas nao falha) e de CUSTO
+ * VARIAVEL (frete/embalagem, repasse puro — sem falha e sem margem), e
+ * aplica provisao de falha, margem, arredondamento, desconto e detalhamento
+ * de margem. Compartilhada por `calcular` e `calcularMultiplo`.
  */
 function finalizarPreco(
   custoNucleo: number,
-  custoRepassado: number,
+  custoInsumos: number,
+  custoVariavel: number,
   parametros: ParametrosEntrada,
   desconto: EntradaPrecificacao['desconto'],
   arredondamento: EstrategiaArredondamento,
 ): Omit<ResultadoPrecificacao, 'custos'> & { custoComFalha: number } {
-  // Falha e margem incidem so' sobre o nucleo — custo repassado (frete,
-  // embalagem, insumos) entra pelo valor cheio, sem markup (ver doc do topo
-  // do arquivo).
+  // Falha incide so' sobre o nucleo (ver doc do topo do arquivo).
   const custoNucleoComFalha = custoNucleo * (1 + parametros.taxaFalha);
-  const custoComFalha = custoNucleoComFalha + custoRepassado;
-  const precoBruto = custoComFalha + custoNucleoComFalha * parametros.margemLucro;
+  const custoComFalha = custoNucleoComFalha + custoInsumos + custoVariavel;
+  // Margem incide sobre o nucleo (com falha) + insumos — insumo e'
+  // componente fisico do produto, leva o mesmo markup. Custo variavel
+  // (frete, embalagem) fica de fora: repasse puro, sem markup.
+  const custoComMargem = custoNucleoComFalha + custoInsumos;
+  const precoBruto = custoComFalha + custoComMargem * parametros.margemLucro;
   const precoFinal = aplicarArredondamento(precoBruto, arredondamento);
 
   // Desconto incide APENAS sobre o preco final, nunca sobre os custos (regra 7).
@@ -216,17 +227,19 @@ function finalizarPreco(
     };
   }
 
-  // Margem real: lucro sobre o custo TOTAL (nucleo com falha + repassado)
-  // apos o que foi cobrado — custo repassado conta aqui mesmo sem markup,
-  // porque ainda e' dinheiro que sai do bolso (frete, embalagem...).
+  // Margem real: lucro sobre o custo TOTAL (nucleo com falha + insumos +
+  // variavel) apos o que foi cobrado — mesmo o que nao leva markup (custo
+  // variavel) conta no denominador, porque ainda e' dinheiro que sai do
+  // bolso (frete, embalagem...).
   const lucro = precoCobrado - custoComFalha;
   const margemReal = custoComFalha > 0 ? lucro / custoComFalha : 0;
 
   // Margem do preco de tabela (antes do desconto) — usada para a regra 2,
   // pois o arredondamento pode ter reduzido a margem planejada. E' sobre o
-  // custo TOTAL (com repassado), entao um pedido com muito custo repassado
-  // relativo ao nucleo naturalmente tem margem "aparente" menor — reflete a
-  // realidade (menos sobra proporcionalmente), nao e' um erro de calculo.
+  // custo TOTAL (nucleo+insumos+variavel), entao um pedido com muito custo
+  // variavel (frete/embalagem, que nunca leva markup) relativo ao resto
+  // naturalmente tem margem "aparente" menor — reflete a realidade (menos
+  // sobra proporcionalmente), nao e' um erro de calculo.
   const margemAposArredondamento = custoComFalha > 0 ? precoFinal / custoComFalha - 1 : 0;
   const atingeMinima = margemAposArredondamento >= parametros.margemMinima - 1e-9;
 
@@ -255,15 +268,16 @@ export function calcular(entrada: EntradaPrecificacao): ResultadoPrecificacao {
   const { peca, material, impressora, custos, parametros } = entrada;
   const c = calcularComponentesPeca(peca, material, impressora, custos);
   const custoVariavel = custos.custoVariavel;
-  // Nucleo (leva markup) vs repassado (insumos + variaveis, sem markup —
-  // ver doc do topo do arquivo e de `finalizarPreco`).
+  // Nucleo (leva falha+markup) vs insumos (leva markup, nao falha) vs
+  // variavel (repasse puro, nem falha nem markup) — ver doc do topo do
+  // arquivo e de `finalizarPreco`.
   const custoNucleo = c.custoMaterial + c.custoEnergia + c.depreciacao + c.maoDeObra + c.custoFixoRateado;
-  const custoRepassado = c.custoInsumos + custoVariavel;
-  const custoTotal = custoNucleo + custoRepassado; // exibicao: soma bruta, sem markup
+  const custoTotal = custoNucleo + c.custoInsumos + custoVariavel; // exibicao: soma bruta, sem markup
 
   const { custoComFalha, ...resto } = finalizarPreco(
     custoNucleo,
-    custoRepassado,
+    c.custoInsumos,
+    custoVariavel,
     parametros,
     entrada.desconto,
     entrada.arredondamento,
@@ -358,15 +372,15 @@ export function calcularMultiplo(entrada: EntradaPrecificacaoMultipla): Resultad
   const somaItens = itens.reduce((s, i) => s + i.custoItemTotal, 0);
   const somaInsumos = itens.reduce((s, i) => s + i.custoInsumos, 0);
   // custoItemTotal (por peca) ja' inclui custoInsumos — tira aqui pra
-  // separar nucleo (leva markup) de repassado (insumos + variaveis, sem
-  // markup — ver doc do topo do arquivo e de `finalizarPreco`).
+  // separar nucleo (leva falha+markup) de insumos (leva markup, nao falha —
+  // ver doc do topo do arquivo e de `finalizarPreco`).
   const custoNucleo = somaItens - somaInsumos;
-  const custoRepassado = somaInsumos + custoVariavel;
   const custoTotal = somaItens + custoVariavel; // exibicao: soma bruta, sem markup
 
   const { custoComFalha, ...resto } = finalizarPreco(
     custoNucleo,
-    custoRepassado,
+    somaInsumos,
+    custoVariavel,
     entrada.parametros,
     entrada.desconto,
     entrada.arredondamento,
