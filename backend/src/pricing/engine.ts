@@ -17,9 +17,8 @@
  *   Custo Repassado    = Custo Insumos + Custo Variavel (frete, embalagem...)
  *   Custo Total        = Custo Nucleo + Custo Repassado  (exibicao, sem markup)
  *   Nucleo c/ Falha    = Custo Nucleo * (1 + taxaFalha)
- *   Custo c/ Falha     = Nucleo c/ Falha + Custo Repassado
- *   Base c/ Margem     = Nucleo c/ Falha + Custo Insumos
- *   Preco (bruto)      = Custo c/ Falha + Base c/ Margem * margemLucro
+ *   Custo c/ Falha     = Nucleo c/ Falha + Custo Repassado   (custo TOTAL real: TUDO que sai do bolso)
+ *   Preco (bruto)      = Custo c/ Falha / (1 - margemLucro)
  *   Preco Final        = arredondamento(Preco bruto)
  *   Preco Cobrado      = Preco Final - desconto (desconto so sobre o final)
  *
@@ -29,12 +28,18 @@
  * proxima peca se a impressao falhar, e custo variavel (frete, embalagem) so'
  * e' gasto quando a peca de fato sai — nenhum dos dois repete com a falha.
  *
- * Margem de lucro incide sobre o custo nucleo (com falha) E sobre os
- * insumos: insumo (argola, lampada, saco zip...) vira parte FISICA do
- * produto final, igual ao filamento — merece o mesmo markup que o resto da
- * producao. Custo variavel (frete, embalagem, etiqueta) e' logistica pura,
- * repassada pelo valor cheio, sem markup: nao faz sentido lucrar em cima do
- * correio (decisao explicita do usuario).
+ * MARGEM SOBRE O PRECO (nao markup sobre o custo): `margemLucro` e' a fracao
+ * do PRECO DE VENDA que vira lucro — nao um multiplicador aplicado em cima do
+ * custo. Por isso o preco e' obtido isolando P na equacao
+ * `margemLucro = (P - custoComFalha) / P`, que da' `P = custoComFalha / (1 -
+ * margemLucro)`. Uma consequencia direta e' que TODOS os custos reais —
+ * inclusive custo variavel (frete, embalagem) e insumos — entram no
+ * denominador: nao ha' mais "componentes que nao levam margem". Isso e'
+ * DIFERENTE do markup antigo (custo * (1 + margem)), onde so' nucleo+insumos
+ * eram multiplicados e o custo variavel era somado por fora, sem markup. Ver
+ * `DetalhamentoMargem.markupSobreCusto` pra quem ainda quer enxergar o lucro
+ * como proporcao do CUSTO (lucro / custo), e nao do preco (lucro / preco) —
+ * os dois numeros sao sempre diferentes e nao devem ser confundidos.
  *
  * `quantidade` e' o numero de unidades identicas que uma peca representa
  * (ex.: 25 canudos impressos juntos na mesma leva). E' puramente
@@ -86,15 +91,20 @@ export interface DetalhamentoDesconto {
 }
 
 export interface DetalhamentoMargem {
-  /** Margem que o usuario pediu (fracao). */
+  /** Margem que o usuario pediu, SOBRE O PRECO de venda (fracao: lucro / preco). */
   planejada: number;
-  /** Margem minima configurada (fracao). */
+  /** Margem minima configurada, SOBRE O PRECO de venda (fracao). */
   minima: number;
-  /** Margem real sobre o preco cobrado apos arredondamento e desconto (fracao). */
+  /**
+   * Margem real SOBRE O PRECO COBRADO, apos arredondamento e desconto
+   * (fracao: lucro / precoCobrado). E' o numero comparavel a `planejada` e a
+   * `minima` — os tres na MESMA unidade (margem sobre preco).
+   */
   real: number;
   /**
-   * Margem do preco de tabela (precoFinal), ANTES de desconto promocional.
-   * Pode diferir da planejada quando o arredondamento arredonda para baixo.
+   * Margem do preco de tabela (precoFinal) SOBRE O PRECO, ANTES de desconto
+   * promocional. Pode diferir da planejada quando o arredondamento arredonda
+   * para baixo.
    */
   aposArredondamento: number;
   /**
@@ -105,6 +115,15 @@ export interface DetalhamentoMargem {
   atingeMinima: boolean;
   /** Lucro absoluto na moeda base = precoCobrado - custoComFalha. */
   lucro: number;
+  /**
+   * Markup SOBRE O CUSTO (fracao: lucro / custoComFalha) — NAO confundir com
+   * `real`/`planejada`/`minima`, que sao margem sobre o PRECO. Os dois
+   * conceitos respondem perguntas diferentes: "que fatia do preco de venda e'
+   * lucro?" (margem) vs. "quanto o lucro representa em cima do que custou?"
+   * (markup). Ex.: margem de 50% sobre o preco equivale a markup de 100%
+   * sobre o custo (dobrar o custo) — nunca sao o mesmo numero.
+   */
+  markupSobreCusto: number;
 }
 
 /** Resultado completo do calculo de precificacao. */
@@ -201,12 +220,15 @@ function finalizarPreco(
 ): Omit<ResultadoPrecificacao, 'custos'> & { custoComFalha: number } {
   // Falha incide so' sobre o nucleo (ver doc do topo do arquivo).
   const custoNucleoComFalha = custoNucleo * (1 + parametros.taxaFalha);
+  // Custo TOTAL real: TUDO que sai do bolso pra entregar a peca — nucleo (com
+  // falha), insumos e custo variavel (frete, embalagem). E' o denominador da
+  // margem sobre o preco: nenhum componente fica de fora dela (ver doc do
+  // topo do arquivo — diferente do markup antigo, que excluia o variavel).
   const custoComFalha = custoNucleoComFalha + custoInsumos + custoVariavel;
-  // Margem incide sobre o nucleo (com falha) + insumos — insumo e'
-  // componente fisico do produto, leva o mesmo markup. Custo variavel
-  // (frete, embalagem) fica de fora: repasse puro, sem markup.
-  const custoComMargem = custoNucleoComFalha + custoInsumos;
-  const precoBruto = custoComFalha + custoComMargem * parametros.margemLucro;
+  // Margem SOBRE O PRECO DE VENDA: preco = custo / (1 - margem). O schema
+  // (`fracaoMargemPreco`) garante margemLucro < 1, entao o divisor nunca
+  // chega a zero/negativo aqui.
+  const precoBruto = custoComFalha / (1 - parametros.margemLucro);
   const precoFinal = aplicarArredondamento(precoBruto, arredondamento);
 
   // Desconto incide APENAS sobre o preco final, nunca sobre os custos (regra 7).
@@ -227,21 +249,23 @@ function finalizarPreco(
     };
   }
 
-  // Margem real: lucro sobre o custo TOTAL (nucleo com falha + insumos +
-  // variavel) apos o que foi cobrado — mesmo o que nao leva markup (custo
-  // variavel) conta no denominador, porque ainda e' dinheiro que sai do
-  // bolso (frete, embalagem...).
+  // Margem real SOBRE O PRECO efetivamente cobrado (apos desconto): lucro /
+  // precoCobrado. Custo TOTAL (nucleo com falha + insumos + variavel) entra
+  // inteiro no lucro — nenhum componente fica de fora da margem (ver doc do
+  // topo do arquivo).
   const lucro = precoCobrado - custoComFalha;
-  const margemReal = custoComFalha > 0 ? lucro / custoComFalha : 0;
+  const margemReal = precoCobrado > 0 ? lucro / precoCobrado : 0;
 
-  // Margem do preco de tabela (antes do desconto) — usada para a regra 2,
-  // pois o arredondamento pode ter reduzido a margem planejada. E' sobre o
-  // custo TOTAL (nucleo+insumos+variavel), entao um pedido com muito custo
-  // variavel (frete/embalagem, que nunca leva markup) relativo ao resto
-  // naturalmente tem margem "aparente" menor — reflete a realidade (menos
-  // sobra proporcionalmente), nao e' um erro de calculo.
-  const margemAposArredondamento = custoComFalha > 0 ? precoFinal / custoComFalha - 1 : 0;
+  // Margem do preco de tabela (antes do desconto) SOBRE O PRECO — usada para
+  // a regra 2, pois o arredondamento pode ter reduzido a margem planejada.
+  const margemAposArredondamento = precoFinal > 0 ? (precoFinal - custoComFalha) / precoFinal : 0;
   const atingeMinima = margemAposArredondamento >= parametros.margemMinima - 1e-9;
+
+  // Markup SOBRE O CUSTO (lucro / custo) — leitura alternativa do MESMO
+  // lucro, pro usuario que pensa em "quanto multipliquei o custo" em vez de
+  // "que fatia do preco e' lucro". Nao entra em NENHUMA decisao (regra 2 usa
+  // sempre margem sobre preco); e' puramente informativo/exibicao.
+  const markupSobreCusto = custoComFalha > 0 ? lucro / custoComFalha : 0;
 
   return {
     precoBruto: arredondarN(precoBruto, 4),
@@ -255,6 +279,7 @@ function finalizarPreco(
       aposArredondamento: arredondarN(margemAposArredondamento, 4),
       atingeMinima,
       lucro: arredondarN(lucro, 2),
+      markupSobreCusto: arredondarN(markupSobreCusto, 4),
     },
     custoComFalha: arredondarN(custoComFalha, 4),
   };

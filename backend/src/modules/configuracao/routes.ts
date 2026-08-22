@@ -13,7 +13,9 @@ const configSchema = z
     precoKwh: z.number().nonnegative(),
     valorHoraTrabalho: z.number().nonnegative(),
     horasProdutivasMes: z.number().positive(),
-    margemMinima: z.number().min(0).max(100),
+    // Margem MINIMA sobre o PRECO de venda: precisa ser < 100% (a formula
+    // preco = custo / (1 - margem) diverge em 100% ou mais — ver pricing/schema.ts).
+    margemMinima: z.number().min(0).lt(1),
   })
   .partial();
 

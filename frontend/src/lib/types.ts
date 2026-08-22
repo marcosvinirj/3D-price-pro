@@ -150,12 +150,17 @@ export interface ResultadoPrecificacao {
   precoCobrado: number;
   desconto: { tipo: string; valorDescontado: number; precoComDesconto: number } | null;
   margem: {
+    /** Margem desejada SOBRE O PRECO de venda (fracao: lucro / preco). */
     planejada: number;
+    /** Margem minima SOBRE O PRECO, configurada em Configuração. */
     minima: number;
+    /** Margem real sobre o preço cobrado (após desconto). */
     real: number;
     aposArredondamento: number;
     atingeMinima: boolean;
     lucro: number;
+    /** Markup SOBRE O CUSTO (fracao: lucro / custoComFalha) — nao confundir com margem (sobre o preço). */
+    markupSobreCusto: number;
   };
 }
 

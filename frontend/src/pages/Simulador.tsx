@@ -669,8 +669,18 @@ export function SimuladorPage() {
             <Field label="Taxa de falha (%)">
               <Input type="number" min="0" max="100" step="1" value={form.taxaFalhaPct} onChange={(e) => set('taxaFalhaPct', e.target.value)} />
             </Field>
-            <Field label="Margem de lucro (%)">
-              <Input type="number" min="0" step="1" value={form.margemLucroPct} onChange={(e) => set('margemLucroPct', e.target.value)} />
+            <Field label="Margem desejada sobre o preço (%)">
+              <Input
+                type="number"
+                min="0"
+                max="99"
+                step="1"
+                value={form.margemLucroPct}
+                onChange={(e) => set('margemLucroPct', e.target.value)}
+              />
+              <span className="mt-1 block text-xs text-slate-400 dark:text-slate-500">
+                fatia do preço de venda que fica de lucro — não um % somado sobre o custo
+              </span>
             </Field>
             <Field label="Desconto (%)">
               <Input type="number" min="0" max="100" step="1" value={form.descontoPct} onChange={(e) => set('descontoPct', e.target.value)} />
@@ -743,7 +753,7 @@ export function SimuladorPage() {
             </div>
             {r && (
               <div className="text-right">
-                <div className="text-sm text-slate-500 dark:text-slate-400">Margem real</div>
+                <div className="text-sm text-slate-500 dark:text-slate-400">Margem sobre o preço</div>
                 <div className={`text-xl font-semibold ${r.margem.real < r.margem.minima ? 'text-red-600' : 'text-emerald-600'}`}>
                   {pct(r.margem.real)}
                 </div>
@@ -751,6 +761,14 @@ export function SimuladorPage() {
               </div>
             )}
           </div>
+
+          {r && (
+            <div className="mt-4 grid grid-cols-3 gap-3 border-t border-slate-100 pt-4 dark:border-slate-800">
+              <Kpi rotulo="Custo total" valor={fmt(r.custos.custoComFalha)} />
+              <Kpi rotulo="Lucro" valor={fmt(r.margem.lucro)} />
+              <Kpi rotulo="Markup sobre o custo" valor={pct(r.margem.markupSobreCusto)} />
+            </div>
+          )}
 
           {r && !r.margem.atingeMinima && (
             <div className="mt-3">
@@ -827,12 +845,14 @@ export function SimuladorPage() {
                 <Linha rotulo="Insumos (leva margem, sem provisão de falha)" valor={r.custos.custoInsumos} fmt={fmt} />
               )}
               {r.custos.custoVariavel > 0 && (
-                <Linha rotulo="Custos variáveis (repasse, sem margem)" valor={r.custos.custoVariavel} fmt={fmt} />
+                <Linha rotulo="Custos variáveis (leva margem, sem provisão de falha)" valor={r.custos.custoVariavel} fmt={fmt} />
               )}
               <div className="my-2 border-t border-slate-100 dark:border-slate-800" />
-              <Linha rotulo="Custo total" valor={r.custos.custoTotal} fmt={fmt} forte />
-              <Linha rotulo="Custo + provisão de falha" valor={r.custos.custoComFalha} fmt={fmt} />
+              <Linha rotulo="Subtotal (sem provisão de falha)" valor={r.custos.custoTotal} fmt={fmt} />
+              <Linha rotulo="Custo total (com provisão de falha)" valor={r.custos.custoComFalha} fmt={fmt} forte />
               <Linha rotulo="Lucro" valor={r.margem.lucro} fmt={fmt} />
+              <Linha rotulo="Margem sobre o preço" valor={r.margem.real} fmt={pct} />
+              <Linha rotulo="Markup sobre o custo" valor={r.margem.markupSobreCusto} fmt={pct} />
             </dl>
             {(() => {
               const pesoTotal = r.itens.reduce((s, i) => s + i.pesoG, 0);
@@ -907,14 +927,17 @@ function InteligenciaNegocio({
   fmt: (v: number) => string;
 }) {
   const custoComFalha = r.custos.custoComFalha;
-  // Nucleo (com falha) + insumos levam margem — insumo e' componente fisico
-  // do produto (ver engine.ts). So' custo variavel (frete/embalagem) fica de
-  // fora; replica exatamente a formula do backend (finalizarPreco) pra
-  // sugerir preco minimo/recomendado corretamente.
-  const custoBaseMargem = custoComFalha - r.custos.custoVariavel;
-  const margemRecomendada = Math.max(0.5, r.margem.minima + 0.3);
-  const precoMinimo = custoComFalha + custoBaseMargem * r.margem.minima;
-  const precoRecomendado = custoComFalha + custoBaseMargem * margemRecomendada;
+  // Margem SOBRE O PRECO: preco = custo / (1 - margem) — replica exatamente
+  // a formula do backend (finalizarPreco em engine.ts) pra sugerir preco
+  // minimo/recomendado. custoComFalha ja soma TODOS os custos reais
+  // (inclusive o variavel — frete/embalagem), entao nenhum componente fica
+  // de fora da conta.
+  const precoMinimo = custoComFalha / (1 - r.margem.minima);
+  // Sugestao de margem "confortavel": pelo menos 50%, ou 30 pontos acima da
+  // minima — nunca >= 90% (perto de 100% a formula diverge; um teto
+  // sanitario evita sugerir um preco absurdo quando a minima ja e' alta).
+  const margemRecomendada = Math.min(0.9, Math.max(0.5, r.margem.minima + 0.3));
+  const precoRecomendado = custoComFalha / (1 - margemRecomendada);
   const lucroPorHora = tempoImpressaoH > 0 ? r.margem.lucro / tempoImpressaoH : 0;
 
   const alertas: { tipo: 'erro' | 'aviso'; msg: string }[] = [];

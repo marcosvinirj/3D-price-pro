@@ -70,13 +70,14 @@ export function ConfiguracaoPage() {
             <Field label="Horas produtivas por mês">
               <Input type="number" min="1" step="1" value={form.horasProdutivasMes} onChange={(e) => set('horasProdutivasMes', e.target.value)} required />
             </Field>
-            <Field label="Margem mínima (%)">
-              <Input type="number" min="0" step="1" value={form.margemMinimaPct} onChange={(e) => set('margemMinimaPct', e.target.value)} required />
+            <Field label="Margem mínima sobre o preço (%)">
+              <Input type="number" min="0" max="99" step="1" value={form.margemMinimaPct} onChange={(e) => set('margemMinimaPct', e.target.value)} required />
             </Field>
             <p className="col-span-2 text-xs text-slate-500 dark:text-slate-400">
-              A margem mínima bloqueia salvar orçamentos com lucro abaixo dela. O custo fixo é
-              rateado por hora produtiva (custos fixos ÷ horas produtivas no mês) e multiplicado
-              pelo tempo de impressão da peça.
+              A margem mínima bloqueia salvar orçamentos com lucro abaixo dela — é a fatia do{' '}
+              <strong>preço de venda</strong> que fica de lucro (não um % somado sobre o custo), por
+              isso precisa ser menor que 100%. O custo fixo é rateado por hora produtiva (custos
+              fixos ÷ horas produtivas no mês) e multiplicado pelo tempo de impressão da peça.
             </p>
             <div className="col-span-2">
               <Button type="submit">Salvar configuração</Button>

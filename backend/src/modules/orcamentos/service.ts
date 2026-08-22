@@ -43,7 +43,9 @@ export const orcamentoInputSchema = z.object({
   itens: z.array(itemInputSchema).min(1, 'Pelo menos uma peca e obrigatoria'),
   parametros: z.object({
     taxaFalha: z.number().min(0).max(1),
-    margemLucro: z.number().min(0).max(100),
+    // Margem DESEJADA sobre o PRECO de venda: precisa ser < 100% (a formula
+    // preco = custo / (1 - margem) diverge em 100% ou mais — ver pricing/schema.ts).
+    margemLucro: z.number().min(0).lt(1),
   }),
   desconto: descontoSchema.optional(),
   arredondamento: arredondamentoSchema.optional(),

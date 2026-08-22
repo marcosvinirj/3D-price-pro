@@ -27,14 +27,20 @@ export const fracao = z
   .max(1, 'Use fracao entre 0 e 1 (ex.: 0.2 para 20%)');
 
 /**
- * Fracao sem teto de 100% (ex.: margem de lucro pode passar de 1 = 100%).
- * Limitada a um teto sanitario para pegar erros grosseiros de digitacao.
+ * Fracao de margem SOBRE O PRECO FINAL DE VENDA (ex.: 0.30 = 30%; ver
+ * `finalizarPreco` em engine.ts: preco = custoTotal / (1 - margem)).
+ * Estritamente MENOR que 1 (100%) — nao e' um teto sanitario arbitrario, e' a
+ * propria matematica da formula: em margem = 100% o preco divergiria pra
+ * infinito, e acima disso o divisor fica negativo (preco negativo). Uma
+ * margem sobre o preco, por definicao, nunca pode alcancar 100% vendendo a
+ * um preco finito — diferente do antigo markup sobre custo, que podia passar
+ * de 100% sem problema (ex.: markup de 150% = triplicar o preco).
  */
-export const fracaoAberta = z
+export const fracaoMargemPreco = z
   .number({ invalid_type_error: 'Deve ser um numero' })
   .finite()
   .min(0, 'Percentual nao pode ser negativo')
-  .max(100, 'Percentual absurdamente alto (>10000%) — verifique a entrada');
+  .lt(1, 'Margem sobre o preco deve ser menor que 100% (a formula preco = custo / (1 - margem) diverge em 100% ou mais)');
 
 export const arredondamentoSchema = z.discriminatedUnion('modo', [
   z.object({ modo: z.literal('nenhum') }),
@@ -100,10 +106,11 @@ export const entradaPrecificacaoSchema = z
     parametros: z.object({
       /** Taxa de falha como fracao (0.10 = 10%). */
       taxaFalha: fracao,
-      /** Margem de lucro desejada como fracao (0.30 = 30%, 1.5 = 150%). */
-      margemLucro: fracaoAberta,
+      /** Margem de lucro desejada sobre o PRECO FINAL de venda, como fracao
+       *  (0.30 = 30% do preco de venda) — nao markup sobre o custo. */
+      margemLucro: fracaoMargemPreco,
       /** Margem minima permitida; salvar abaixo disso e bloqueado. */
-      margemMinima: fracaoAberta.default(0.2),
+      margemMinima: fracaoMargemPreco.default(0.2),
     }),
     /** Desconto aplicado APENAS sobre o preco final (regra 7). Opcional. */
     desconto: descontoSchema.optional(),
@@ -168,8 +175,8 @@ export const entradaPrecificacaoMultiplaSchema = z
     }),
     parametros: z.object({
       taxaFalha: fracao,
-      margemLucro: fracaoAberta,
-      margemMinima: fracaoAberta.default(0.2),
+      margemLucro: fracaoMargemPreco,
+      margemMinima: fracaoMargemPreco.default(0.2),
     }),
     desconto: descontoSchema.optional(),
     arredondamento: arredondamentoSchema.default({ modo: 'nenhum' }),

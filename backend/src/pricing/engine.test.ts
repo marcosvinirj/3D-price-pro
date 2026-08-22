@@ -18,7 +18,7 @@ import {
  *   fixo rateado = (1000 / 400) * 4         = 10.00  (custo fixo/hora * tempoImpressaoH)
  *   custoTotal   = 31.06
  *   custoComFalha= 31.06 * 1.10             = 34.166
- *   precoBruto   = 34.166 * 1.50            = 51.249
+ *   precoBruto   = 34.166 / (1 - 0.50)      = 68.332  (margem SOBRE O PRECO, nao markup)
  */
 function entradaBase(
   over: Partial<EntradaPrecificacaoInput> = {},
@@ -109,8 +109,8 @@ describe('custos variaveis (soma dos itens selecionados)', () => {
   });
 });
 
-describe('custo variavel (frete, embalagem) e repasse puro: NAO leva provisao de falha nem margem', () => {
-  it('custo variavel (ex.: frete) aumenta o preco final pelo seu valor EXATO, sem markup', () => {
+describe('custo variavel (frete, embalagem): NAO leva provisao de falha, mas ENTRA na margem sobre o preco', () => {
+  it('custo variavel (ex.: frete) faz parte do custo total e leva a MESMA margem sobre o preco que o resto', () => {
     const semFrete = precificar(entradaBase());
     const comFrete = precificar(
       entradaBase({
@@ -123,12 +123,15 @@ describe('custo variavel (frete, embalagem) e repasse puro: NAO leva provisao de
         },
       }),
     );
-    // taxaFalha=10% e margemLucro=50% da entradaBase NAO incidem sobre os
-    // 3.50 de frete — o preco bruto sobe exatamente 3.50, nao 3.50*1.1*1.5=5.775.
-    expect(comFrete.precoBruto - semFrete.precoBruto).toBeCloseTo(3.5, 4);
+    // Margem sobre o preco: preco = custoComFalha / (1 - margem). Os 3.50 de
+    // frete entram no custoComFalha (ver doc do topo do arquivo), entao o
+    // preco bruto sobe 3.50 / (1 - 0.5) = 7.00 — nao os 3.50 "exatos" do
+    // antigo repasse sem markup (regra explicita do usuario: o frete tambem
+    // deve pagar a margem, como qualquer outro custo real).
+    expect(comFrete.precoBruto - semFrete.precoBruto).toBeCloseTo(3.5 / (1 - 0.5), 4);
   });
 
-  it('custoTotal (exibicao) soma tudo; custoComFalha e nucleo-com-falha + repasse cheio (sem markup no repasse)', () => {
+  it('custoTotal (exibicao) soma tudo; custoComFalha e nucleo-com-falha + repasse cheio (a falha nao repete no repasse)', () => {
     const r = precificar(
       entradaBase({
         custos: {
@@ -164,10 +167,11 @@ describe('insumo e componente do produto: leva margem, mas NAO leva provisao de 
         ],
       }),
     );
-    // margemLucro=50% da entradaMultiplaBase incide sobre o insumo (e'
-    // componente do produto) — 0.07 * (1 + 0.5) = 0.105. A taxaFalha (10%)
-    // NAO incide (insumo nao se perde numa impressao malsucedida).
-    expect(comInsumo.precoBruto - semInsumo.precoBruto).toBeCloseTo(0.105, 4);
+    // Margem sobre o preco incide sobre o custo TOTAL, entao o insumo (que
+    // vira parte fisica do produto) tambem "paga" a margem via o divisor
+    // (1 - margem): 0.07 / (1 - 0.5) = 0.14. A taxaFalha (10%) NAO incide
+    // (insumo nao se perde numa impressao malsucedida).
+    expect(comInsumo.precoBruto - semInsumo.precoBruto).toBeCloseTo(0.07 / (1 - 0.5), 4);
   });
 
   it('insumo NAO leva provisao de falha (custoComFalha sobe pelo valor exato do insumo)', () => {
@@ -193,15 +197,15 @@ describe('insumo e componente do produto: leva margem, mas NAO leva provisao de 
 });
 
 describe('aplicacao de falha e margem', () => {
-  it('aplica taxa de falha e margem sobre o custo total', () => {
+  it('aplica taxa de falha sobre o nucleo e margem SOBRE O PRECO (custo / (1 - margem))', () => {
     const r = precificar(entradaBase());
     expect(r.custos.custoComFalha).toBeCloseTo(34.166, 4);
-    expect(r.precoBruto).toBeCloseTo(51.249, 4);
+    expect(r.precoBruto).toBeCloseTo(34.166 / (1 - 0.5), 4); // 68.332
   });
 
   it('sem arredondamento, o preco final apenas normaliza para 2 casas', () => {
     const r = precificar(entradaBase());
-    expect(r.precoFinal).toBe(51.25);
+    expect(r.precoFinal).toBe(68.33);
   });
 
   it('margem real bate com a planejada quando nao ha desconto', () => {
@@ -209,32 +213,49 @@ describe('aplicacao de falha e margem', () => {
     expect(r.margem.planejada).toBe(0.5);
     expect(r.margem.real).toBeCloseTo(0.5, 2);
   });
+
+  it('markup sobre o custo e SEMPRE maior que a margem sobre o preco (mesmo lucro, bases diferentes)', () => {
+    // margem 50% sobre o preco equivale a markup de 100% sobre o custo
+    // (dobrar o custo) — os dois nunca sao o mesmo numero (ver doc do topo
+    // do arquivo). Exemplo do pedido do usuario: custo 3.26, margem 50% =>
+    // preco 6.52, lucro 3.26 => markup 100% sobre o custo.
+    const r = precificar(entradaBase());
+    expect(r.margem.markupSobreCusto).toBeCloseTo(1.0, 2); // 100%
+    expect(r.margem.markupSobreCusto).toBeGreaterThan(r.margem.real);
+  });
 });
 
 describe('arredondamento', () => {
   it('psicologico forca terminacao em ,90 para cima', () => {
     const r = precificar(entradaBase({ arredondamento: { modo: 'psicologico', terminacao: 0.9 } }));
-    expect(r.precoFinal).toBe(51.9);
+    expect(r.precoFinal).toBe(68.9);
   });
 
   it('psicologico sobe para o proximo inteiro quando ja passou da terminacao', () => {
-    // precoBruto ~91.5 => deve virar 91.90 (nao 90.90)
+    // custoComFalha da entradaBase e' fixo em 34.166. Escolhemos margemLucro
+    // tal que o precoBruto caia LOGO ACIMA de uma terminacao ,90 (frac 0.95)
+    // — isso forca o arredondamento psicologico a subir pro PROXIMO inteiro
+    // em vez de so' trocar a casa decimal.
+    const custoComFalha = 34.166;
+    const alvoPrecoBruto = 68.95; // frac 0.95 > 0.90
+    const margemLucro = 1 - custoComFalha / alvoPrecoBruto;
     const r = precificar(
-      entradaBase({ parametros: { taxaFalha: 0.1, margemLucro: 1.68, margemMinima: 0.2 }, arredondamento: { modo: 'psicologico', terminacao: 0.9 } }),
+      entradaBase({ parametros: { taxaFalha: 0.1, margemLucro, margemMinima: 0.2 }, arredondamento: { modo: 'psicologico', terminacao: 0.9 } }),
     );
-    expect(r.precoFinal.toFixed(2).endsWith('.90')).toBe(true);
+    expect(r.precoBruto).toBeCloseTo(alvoPrecoBruto, 2);
+    expect(r.precoFinal).toBe(69.9); // subiu pro proximo inteiro (69.90), nao 68.90
     expect(r.precoFinal).toBeGreaterThanOrEqual(r.precoBruto);
   });
 
   it('paraCima nunca reduz o preco (protege margem)', () => {
     const r = precificar(entradaBase({ arredondamento: { modo: 'paraCima', passo: 1 } }));
-    expect(r.precoFinal).toBe(52);
+    expect(r.precoFinal).toBe(69);
     expect(r.precoFinal).toBeGreaterThanOrEqual(r.precoBruto);
   });
 
   it('maisProximo arredonda ao multiplo do passo', () => {
     const r = precificar(entradaBase({ arredondamento: { modo: 'maisProximo', passo: 0.5 } }));
-    expect(r.precoFinal).toBe(51);
+    expect(r.precoFinal).toBe(68.5);
   });
 });
 
@@ -317,6 +338,21 @@ describe('validacao de entrada', () => {
     ).toThrow(ErroValidacaoPrecificacao);
   });
 
+  it('rejeita margem de lucro >= 100% (formula preco = custo / (1 - margem) diverge ou fica negativa)', () => {
+    expect(() =>
+      precificar(entradaBase({ parametros: { taxaFalha: 0.1, margemLucro: 1, margemMinima: 0.2 } })),
+    ).toThrow(ErroValidacaoPrecificacao);
+    expect(() =>
+      precificar(entradaBase({ parametros: { taxaFalha: 0.1, margemLucro: 1.5, margemMinima: 0.2 } })),
+    ).toThrow(ErroValidacaoPrecificacao);
+  });
+
+  it('rejeita margem minima >= 100% pela mesma razao', () => {
+    expect(() =>
+      precificar(entradaBase({ parametros: { taxaFalha: 0.1, margemLucro: 0.5, margemMinima: 1 } })),
+    ).toThrow(ErroValidacaoPrecificacao);
+  });
+
   it('a margem minima tem default de 20% quando omitida', () => {
     // margemLucro 0.1 < default 0.2 => deve falhar mesmo sem informar margemMinima
     expect(() =>
@@ -361,7 +397,7 @@ describe('calcularMultiplo (orcamento com varias pecas)', () => {
   it('com 1 peca, bate exatamente com calcular() para a mesma entrada', () => {
     const r = precificarMultiplo(entradaMultiplaBase());
     expect(r.custos.custoTotal).toBeCloseTo(31.06, 4);
-    expect(r.precoBruto).toBeCloseTo(51.249, 4);
+    expect(r.precoBruto).toBeCloseTo(34.166 / (1 - 0.5), 4); // 68.332
     expect(r.itens).toHaveLength(1);
     expect(r.itens[0]!.custoItemTotal).toBeCloseTo(31.06, 4);
   });
@@ -373,7 +409,7 @@ describe('calcularMultiplo (orcamento com varias pecas)', () => {
     expect(r.custos.custoTotal).toBeCloseTo(31.06 * 2, 4);
     // falha/margem aplicadas UMA vez sobre o total agregado, nao por peca.
     expect(r.custos.custoComFalha).toBeCloseTo(31.06 * 2 * 1.1, 4);
-    expect(r.precoBruto).toBeCloseTo(31.06 * 2 * 1.1 * 1.5, 4);
+    expect(r.precoBruto).toBeCloseTo((31.06 * 2 * 1.1) / (1 - 0.5), 4);
     expect(r.itens.map((i) => i.nome)).toEqual(['Cauda', 'Torso']);
   });
 

@@ -106,12 +106,13 @@ const r = precificar({
   },
   parametros: { taxaFalha: 0.1, margemLucro: 0.5, margemMinima: 0.2 },
   desconto: { tipo: 'percentual', valor: 0.1 }, // opcional
-  arredondamento: { modo: 'psicologico', terminacao: 0.9 }, // 51.90
+  arredondamento: { modo: 'psicologico', terminacao: 0.9 }, // 101.90
 });
 
-r.precoFinal;    // preço de tabela após arredondamento
-r.precoCobrado;  // após desconto
-r.margem.real;   // margem real (cai quando há desconto)
+r.precoFinal;             // preço de tabela após arredondamento
+r.precoCobrado;           // após desconto
+r.margem.real;            // margem REAL sobre o preço cobrado (cai quando há desconto)
+r.margem.markupSobreCusto; // o mesmo lucro, lido como markup sobre o custo (lucro / custo)
 ```
 
 `precificar` valida a entrada e **lança `ErroValidacaoPrecificacao`** (com os
@@ -131,8 +132,9 @@ Custo Núcleo       = Material + Energia + Depreciação + Mão de Obra + Custo 
 Custo Insumos      = Σ (insumo.valorUnitario × insumo.quantidade) — argola, escovinha, lâmpada…
 Custo Variável     = Σ dos custos variáveis selecionados (embalagem, frete, etiqueta…)
 Custo Repassado    = Custo Insumos + Custo Variável
-Custo Total        = Custo Núcleo + Custo Repassado           (exibição, sem markup)
-Preço Final        = arredondar( (Custo Núcleo × (1+taxaFalha) + Custo Insumos) × (1+margemLucro) + Custo Variável )
+Custo Total        = Custo Núcleo + Custo Repassado           (exibição, sem margem)
+Custo Total c/ Falha = Custo Núcleo × (1+taxaFalha) + Custo Repassado   (custo TOTAL real)
+Preço Final        = arredondar( Custo Total c/ Falha / (1 − margemLucro) )
 Preço Cobrado      = Preço Final − desconto
 ```
 
@@ -141,11 +143,17 @@ depreciação, mão de obra, custo fixo) — o que de fato se perde numa
 impressão malsucedida; insumos ficam intactos no estoque e custo variável só
 é gasto quando a peça de fato sai.
 
-Margem de lucro incide sobre o **Custo Núcleo (com falha) e sobre os
-Insumos** — insumo (argola, lâmpada, saco zip…) vira parte física do produto
-final, igual ao filamento, e merece o mesmo markup. **Custo Variável** (frete,
-embalagem, etiqueta) é logística pura, **repassado pelo valor cheio, sem
-markup** — decisão de negócio: não faz sentido lucrar em cima do correio.
+**Margem de lucro é sobre o PREÇO FINAL DE VENDA, não markup sobre o custo.**
+`margemLucro` é a fração do preço de venda que vira lucro — daí a fórmula
+`preço = custo / (1 − margem)` (isolando P em `margem = (P − custo) / P`).
+Consequência direta: **todo** custo real entra no cálculo, inclusive o Custo
+Variável (frete, embalagem) — que no modelo antigo era repassado "por fora",
+sem levar margem. `margemLucro`/`margemMinima` precisam ser **< 100%**: nessa
+margem a fórmula diverge (denominador zero ou negativo). `r.margem.real` /
+`r.margem.planejada` / `r.margem.minima` são todos margem-sobre-preço; pra
+quem quer enxergar o mesmo lucro como "quanto multipliquei o custo", use
+`r.margem.markupSobreCusto` (lucro / custo) — os dois números nunca coincidem
+(ex.: 50% de margem sobre o preço = 100% de markup sobre o custo).
 
 ## Regras de negócio implementadas
 
