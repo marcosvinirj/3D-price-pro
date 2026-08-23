@@ -64,6 +64,9 @@ interface FormState {
   descontoPct: string;
   arredondamento: ModoArredondamento;
   custosVariaveisIds: number[];
+  /** Quantos produtos/conjuntos COMPLETOS esta encomenda representa (pode
+   *  diferir do nº de peças) — só exibição, ver `montarInput`. */
+  quantidadeProdutosFinais: string;
 }
 
 const itemInicial: ItemForm = {
@@ -89,6 +92,7 @@ const inicial: FormState = {
   descontoPct: '0',
   arredondamento: 'psicologico',
   custosVariaveisIds: [],
+  quantidadeProdutosFinais: '1',
 };
 
 /** Rotulo do material com tipo e cor, para deixar a escolha inequivoca. */
@@ -130,6 +134,7 @@ function montarInput(f: FormState): OrcamentoInput | null {
       taxaFalha: Number(f.taxaFalhaPct) / 100,
       margemLucro: Number(f.margemLucroPct) / 100,
     },
+    quantidadeProdutosFinais: Number(f.quantidadeProdutosFinais) || 1,
     ...(desconto > 0 ? { desconto: { tipo: 'percentual' as const, valor: desconto } } : {}),
     ...(f.custosVariaveisIds.length ? { custosVariaveisIds: f.custosVariaveisIds } : {}),
     ...(f.cliente.trim() ? { cliente: f.cliente.trim() } : {}),
@@ -176,6 +181,8 @@ interface OrcamentoParaEditar {
   telefone: string | null;
   descricaoPeca: string | null;
   impressoraId: number;
+  /** Quantos produtos/conjuntos COMPLETOS esta encomenda representa. */
+  quantidadeProdutosFinais: number;
   entradaJson: string;
   itens: {
     nome: string | null;
@@ -269,6 +276,7 @@ export function SimuladorPage() {
             entrada.desconto?.tipo === 'percentual' ? String(Math.round(entrada.desconto.valor * 100)) : '0',
           arredondamento: entrada.arredondamento?.modo ?? 'nenhum',
           custosVariaveisIds: o.custosVariaveisSelecionados.map((cv) => cv.custoVariavelId),
+          quantidadeProdutosFinais: String(o.quantidadeProdutosFinais ?? 1),
         });
         setCarregandoEdicao(false);
       } else {
@@ -523,6 +531,20 @@ export function SimuladorPage() {
                 ))}
               </Select>
             </Field>
+            <Field label="Quantidade de produtos/conjuntos">
+              <Input
+                type="number"
+                min="1"
+                step="1"
+                value={form.quantidadeProdutosFinais}
+                onChange={(e) => set('quantidadeProdutosFinais', e.target.value)}
+              />
+              <span className="mt-1 block text-xs text-slate-400 dark:text-slate-500">
+                <strong className="font-semibold text-slate-500 dark:text-slate-400">Quantidade de produtos/conjuntos:</strong>{' '}
+                quantidade de produtos completos que esta encomenda representa. Este campo serve apenas para calcular
+                o preço por produto e não multiplica automaticamente peso, tempo ou custos das peças.
+              </span>
+            </Field>
           </div>
         </Card>
 
@@ -573,7 +595,10 @@ export function SimuladorPage() {
                       onChange={(e) => setItem(idx, 'quantidade', e.target.value)}
                     />
                     <span className="mt-1 block text-xs text-slate-400 dark:text-slate-500">
-                      só informativo (quantas peças vão pra impressão) — aparece no PDF, não entra na conta
+                      <strong className="font-semibold text-slate-500 dark:text-slate-400">Quantidade da peça:</strong>{' '}
+                      número de unidades desta peça representadas pelos valores de peso e tempo informados. A
+                      quantidade não multiplica automaticamente peso, tempo ou custo. Se informar 10 unidades, o
+                      peso e o tempo devem ser os totais das 10 unidades.
                     </span>
                   </Field>
                 </div>
@@ -753,14 +778,17 @@ export function SimuladorPage() {
               {r && (() => {
                 // Puramente visual: preço final da ENCOMENDA (ja com tudo — nucleo
                 // com falha, insumos, variavel/embalagem — ver engine.ts) dividido
-                // pela soma das quantidades das pecas. NAO redistribui nem recalcula
-                // nenhum custo/margem/embalagem — so' informa a media por unidade.
-                const quantidadeTotal = r.itens.reduce((s, i) => s + i.quantidade, 0);
-                return quantidadeTotal > 1 ? (
+                // pela quantidade de PRODUTOS/CONJUNTOS finais (campo proprio,
+                // independente da quantidade de cada peca/componente — ver doc no
+                // topo de orcamentos/service.ts). NAO soma quantidade de pecas
+                // diferentes (isso conflaria "3 componentes de 1 produto" com "3
+                // produtos"), nao redistribui nem recalcula nenhum custo/margem.
+                const qtdProdutos = Number(form.quantidadeProdutosFinais) || 1;
+                return qtdProdutos > 1 ? (
                   <div className="text-sm text-slate-500 dark:text-slate-400">
-                    Preço médio por unidade ({quantidadeTotal}x):{' '}
+                    Preço por produto:{' '}
                     <span className="font-semibold text-slate-700 dark:text-slate-200">
-                      {fmt(r.precoFinal / quantidadeTotal)}
+                      {fmt(r.precoFinal / qtdProdutos)}
                     </span>
                   </div>
                 ) : null;

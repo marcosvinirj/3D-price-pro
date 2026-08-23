@@ -203,6 +203,10 @@ export interface OrcamentoInput {
   itens: OrcamentoItemInput[];
   parametros: { taxaFalha: number; margemLucro: number };
   custosVariaveisIds?: number[];
+  /** Quantos produtos/conjuntos COMPLETOS esta encomenda representa (pode
+   *  diferir do nº de peças). Só exibição ("Preço por produto") — não entra
+   *  em nenhum cálculo de custo/margem/preço. */
+  quantidadeProdutosFinais: number;
   desconto?: { tipo: 'percentual' | 'valor'; valor: number };
   arredondamento?:
     | { modo: 'nenhum' }
@@ -257,6 +261,8 @@ export interface OrcamentoDetalhado {
   precoCobrado: number;
   impressoraId: number;
   impressora: { id: number; nome: string };
+  /** Quantos produtos/conjuntos COMPLETOS esta encomenda representa. */
+  quantidadeProdutosFinais: number;
   itens: OrcamentoItemSalvo[];
   custosVariaveisSelecionados: OrcamentoCustoVariavelSalvo[];
   resultado: ResultadoPrecificacao;

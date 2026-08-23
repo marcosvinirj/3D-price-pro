@@ -210,6 +210,14 @@ model Orcamento {
   descricaoPeca String?
   status        String   @default("pendente") // pendente | aprovado | recusado
 
+  // Quantos produtos/conjuntos COMPLETOS esta encomenda representa — pode ser
+  // diferente do numero de pecas/componentes (ex.: 3 pecas diferentes que
+  // formam 1 chaveiro = quantidadeProdutosFinais 1, nao 3). Puramente
+  // informativa/exibicao ("Preco por produto" no Simulador): NAO entra em
+  // nenhum calculo de custo/margem/preco (ver orcamentos/service.ts e
+  // pricing/engine.ts, que nunca leem este campo).
+  quantidadeProdutosFinais Int @default(1)
+
   // Snapshots imutaveis (regras 5 e 6): guardam entrada e resultado no momento
   // da emissao. Reajuste (ou edicao, enquanto pendente) gera um novo snapshot;
   // orcamentos ja aprovados nunca sao alterados.

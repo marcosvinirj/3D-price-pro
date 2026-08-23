@@ -51,6 +51,14 @@ export const orcamentoInputSchema = z.object({
   arredondamento: arredondamentoSchema.optional(),
   /** IDs dos custos variaveis (embalagem, frete...) selecionados para o orcamento inteiro. */
   custosVariaveisIds: z.array(z.number().int().positive()).optional(),
+  /**
+   * Quantos produtos/conjuntos COMPLETOS esta encomenda representa — pode
+   * ser diferente do numero de pecas (ex.: 3 pecas diferentes que formam 1
+   * chaveiro = 1, nao 3). Puramente informativa/exibicao ("Preco por
+   * produto" no Simulador) — NAO entra em `montarCalculo`/no motor de
+   * precificacao, nunca influencia custo, margem, lucro ou preco final.
+   */
+  quantidadeProdutosFinais: z.number().int().positive().default(1),
   cliente: z.string().optional(),
   telefone: z.string().optional(),
   descricaoPeca: z.string().optional(),
@@ -292,6 +300,7 @@ export async function criarOrcamento(input: OrcamentoInput, usuarioId: number) {
         telefone: input.telefone ?? null,
         descricaoPeca: input.descricaoPeca ?? null,
         status: 'pendente',
+        quantidadeProdutosFinais: input.quantidadeProdutosFinais,
         entradaJson: JSON.stringify(entradaMotor),
         resultadoJson: JSON.stringify(resultado),
         precoFinal: resultado.precoFinal,
@@ -374,6 +383,7 @@ export async function editarOrcamento(id: number, input: OrcamentoInput, usuario
         telefone: input.telefone ?? null,
         descricaoPeca: input.descricaoPeca ?? null,
         impressoraId: input.impressoraId,
+        quantidadeProdutosFinais: input.quantidadeProdutosFinais,
         entradaJson: JSON.stringify(entradaMotor),
         resultadoJson: JSON.stringify(resultado),
         precoFinal: resultado.precoFinal,
