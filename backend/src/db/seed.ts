@@ -44,7 +44,7 @@ async function main() {
   }
   if ((await prisma.impressora.count({ where: { usuarioId } })) === 0) {
     await prisma.impressora.create({
-      data: { usuarioId, nome: 'Ender 3', potenciaW: 200, valorAquisicao: 2000, vidaUtilH: 2000 },
+      data: { usuarioId, nome: 'Ender 3', potenciaW: 200, potenciaMediaW: 200, valorAquisicao: 2000, vidaUtilH: 2000 },
     });
   }
   if ((await prisma.custoFixo.count({ where: { usuarioId } })) === 0) {

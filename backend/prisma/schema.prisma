@@ -103,7 +103,8 @@ model Impressora {
   marca                String?
   modelo               String?
   dataCompra           String? // ISO "AAAA-MM-DD" (data de compra)
-  potenciaW            Float
+  potenciaW            Float // potencia MAXIMA/nominal (informativa; nao entra no calculo de energia)
+  potenciaMediaW       Float // consumo MEDIO durante a impressao (W); e' o unico valor que entra no calculo de custo de energia (ver engine.ts). Migrada com potenciaMediaW = potenciaW pra nao mudar nenhum preco ja calculado — o dono da impressora ajusta depois pro valor real.
   valorAquisicao       Float
   vidaUtilH            Float
   custoManutencaoAnual Float       @default(0) // custo anual de manutencao

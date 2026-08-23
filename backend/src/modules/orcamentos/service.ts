@@ -139,7 +139,10 @@ async function montarCalculo(input: OrcamentoInput, usuarioId: number) {
       };
     }),
     impressora: {
-      potenciaW: impressora.potenciaW,
+      // Custo de energia usa SO' o consumo medio (potenciaMediaW) — a
+      // potencia maxima/nominal (potenciaW) e' so' informativa no cadastro,
+      // nao entra em nenhum calculo (ver doc do topo de engine.ts).
+      potenciaMediaW: impressora.potenciaMediaW,
       valorAquisicao: impressora.valorAquisicao,
       vidaUtilH: impressora.vidaUtilH,
     },

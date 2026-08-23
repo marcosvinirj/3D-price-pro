@@ -79,7 +79,7 @@ beforeEach(async () => {
     },
   });
   const impressora = await prisma.impressora.create({
-    data: { usuarioId: operador.id, nome: 'Ender 3', potenciaW: 200, valorAquisicao: 2000, vidaUtilH: 2000 },
+    data: { usuarioId: operador.id, nome: 'Ender 3', potenciaW: 200, potenciaMediaW: 200, valorAquisicao: 2000, vidaUtilH: 2000 },
   });
 
   ctx = {

@@ -10,6 +10,7 @@ type FormImp = {
   modelo: string;
   dataCompra: string;
   potenciaW: string;
+  potenciaMediaW: string;
   valorAquisicao: string;
   vidaUtilH: string;
   custoManutencaoAnual: string;
@@ -22,6 +23,7 @@ const vazio: FormImp = {
   modelo: '',
   dataCompra: '',
   potenciaW: '',
+  potenciaMediaW: '',
   valorAquisicao: '',
   vidaUtilH: '',
   custoManutencaoAnual: '0',
@@ -62,6 +64,7 @@ export function ImpressorasPage() {
       modelo: i.modelo ?? '',
       dataCompra: i.dataCompra ?? '',
       potenciaW: String(i.potenciaW),
+      potenciaMediaW: String(i.potenciaMediaW),
       valorAquisicao: String(i.valorAquisicao),
       vidaUtilH: String(i.vidaUtilH),
       custoManutencaoAnual: String(i.custoManutencaoAnual),
@@ -80,6 +83,7 @@ export function ImpressorasPage() {
       modelo: form.modelo.trim() || undefined,
       dataCompra: form.dataCompra || undefined,
       potenciaW: Number(form.potenciaW),
+      potenciaMediaW: Number(form.potenciaMediaW),
       valorAquisicao: Number(form.valorAquisicao),
       vidaUtilH: Number(form.vidaUtilH),
       custoManutencaoAnual: Number(form.custoManutencaoAnual),
@@ -133,8 +137,17 @@ export function ImpressorasPage() {
             <Field label="Data de compra">
               <Input type="date" value={form.dataCompra} onChange={(e) => set('dataCompra', e.target.value)} />
             </Field>
-            <Field label="Potência (W)">
+            <Field label="Potência máxima (W)">
               <Input type="number" min="0" step="1" value={form.potenciaW} onChange={(e) => set('potenciaW', e.target.value)} required />
+              <span className="mt-1 block text-xs text-slate-400 dark:text-slate-500">
+                Potência máxima/nominal informada pelo fabricante.
+              </span>
+            </Field>
+            <Field label="Consumo médio (W)">
+              <Input type="number" min="0.1" step="1" value={form.potenciaMediaW} onChange={(e) => set('potenciaMediaW', e.target.value)} required />
+              <span className="mt-1 block text-xs text-slate-400 dark:text-slate-500">
+                Consumo médio estimado/medido durante a impressão. Este é o valor utilizado para calcular o custo de eletricidade.
+              </span>
             </Field>
             <Field label="Valor de aquisição (€)">
               <Input type="number" min="0" step="0.01" value={form.valorAquisicao} onChange={(e) => set('valorAquisicao', e.target.value)} required />
@@ -174,7 +187,8 @@ export function ImpressorasPage() {
               <tr className="border-b border-slate-200 dark:border-slate-700 text-left text-slate-500 dark:text-slate-400">
                 <th className="py-2 pr-4">Nome</th>
                 <th className="py-2 pr-4">Marca / Modelo</th>
-                <th className="py-2 pr-4">Potência</th>
+                <th className="py-2 pr-4">Potência máx.</th>
+                <th className="py-2 pr-4">Consumo médio</th>
                 <th className="py-2 pr-4">Valor</th>
                 <th className="py-2 pr-4">Vida útil</th>
                 <th className="py-2 pr-4">Deprec./h</th>
@@ -189,6 +203,7 @@ export function ImpressorasPage() {
                     {[i.marca, i.modelo].filter(Boolean).join(' ') || '—'}
                   </td>
                   <td className="py-2 pr-4 text-slate-600 dark:text-slate-300">{i.potenciaW} W</td>
+                  <td className="py-2 pr-4 text-slate-600 dark:text-slate-300">{i.potenciaMediaW} W</td>
                   <td className="py-2 pr-4">{fmt(i.valorAquisicao)}</td>
                   <td className="py-2 pr-4 text-slate-600 dark:text-slate-300">{i.vidaUtilH} h</td>
                   <td className="py-2 pr-4 text-slate-600 dark:text-slate-300">
@@ -208,7 +223,7 @@ export function ImpressorasPage() {
               ))}
               {itens.length === 0 && (
                 <tr>
-                  <td colSpan={7} className="py-4 text-center text-slate-400 dark:text-slate-500">
+                  <td colSpan={8} className="py-4 text-center text-slate-400 dark:text-slate-500">
                     Nenhuma impressora cadastrada.
                   </td>
                 </tr>

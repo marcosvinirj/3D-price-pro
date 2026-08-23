@@ -12,7 +12,10 @@ const impressoraSchema = z.object({
   marca: z.string().optional(),
   modelo: z.string().optional(),
   dataCompra: z.string().optional(),
+  /** Potencia MAXIMA/nominal informada pelo fabricante — informativa, nao entra no calculo. */
   potenciaW: z.number().nonnegative(),
+  /** Consumo MEDIO durante a impressao — e' o unico valor usado no custo de energia. */
+  potenciaMediaW: z.number().positive('Consumo medio deve ser maior que zero'),
   valorAquisicao: z.number().nonnegative(),
   vidaUtilH: z.number().positive(),
   custoManutencaoAnual: z.number().min(0).default(0),

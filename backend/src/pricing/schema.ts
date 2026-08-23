@@ -90,7 +90,10 @@ export const entradaPrecificacaoSchema = z
       taxaDesperdicio: fracao,
     }),
     impressora: z.object({
-      potenciaW: naoNegativo,
+      /** Consumo MEDIO durante a impressao (W) — unico valor usado no custo
+       *  de energia (ver engine.ts). Potencia maxima/nominal e' so'
+       *  informativa no cadastro, nao entra aqui. */
+      potenciaMediaW: positivo,
       valorAquisicao: naoNegativo,
       vidaUtilH: positivo,
     }),
@@ -162,7 +165,10 @@ export const entradaPrecificacaoMultiplaSchema = z
   .object({
     itens: z.array(itemPrecificacaoSchema).min(1, 'Pelo menos uma peca e obrigatoria'),
     impressora: z.object({
-      potenciaW: naoNegativo,
+      /** Consumo MEDIO durante a impressao (W) — unico valor usado no custo
+       *  de energia (ver engine.ts). Potencia maxima/nominal e' so'
+       *  informativa no cadastro, nao entra aqui. */
+      potenciaMediaW: positivo,
       valorAquisicao: naoNegativo,
       vidaUtilH: positivo,
     }),

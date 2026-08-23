@@ -26,7 +26,7 @@ function entradaBase(
   return {
     peca: { pesoG: 50, tempoImpressaoH: 4, tempoPosProcessamentoH: 0.5 },
     material: { precoKg: 120, taxaDesperdicio: 0.05 },
-    impressora: { potenciaW: 200, valorAquisicao: 2000, vidaUtilH: 2000 },
+    impressora: { potenciaMediaW: 200, valorAquisicao: 2000, vidaUtilH: 2000 },
     custos: {
       precoKwh: 0.95,
       valorHoraTrabalho: 20,
@@ -386,7 +386,7 @@ function entradaMultiplaBase(
 ): EntradaPrecificacaoMultiplaInput {
   return {
     itens: [pecaBase()],
-    impressora: { potenciaW: 200, valorAquisicao: 2000, vidaUtilH: 2000 },
+    impressora: { potenciaMediaW: 200, valorAquisicao: 2000, vidaUtilH: 2000 },
     custos: { precoKwh: 0.95, valorHoraTrabalho: 20, custosFixosMensais: 1000, horasProdutivasMes: 400 },
     parametros: { taxaFalha: 0.1, margemLucro: 0.5, margemMinima: 0.2 },
     ...over,

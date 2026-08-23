@@ -7,7 +7,7 @@
  *
  * Formulas (ver especificacao, secao 3):
  *   Custo Material     = (pesoG * precoKg / 1000) * (1 + taxaDesperdicio)
- *   Custo Energia      = (potenciaW / 1000) * tempoImpressaoH * precoKwh
+ *   Custo Energia      = (potenciaMediaW / 1000) * tempoImpressaoH * precoKwh
  *   Depreciacao        = (valorAquisicao / vidaUtilH) * tempoImpressaoH
  *   Mao de Obra        = tempoPosProcessamentoH * valorHoraTrabalho
  *   Custo Fixo/Hora    = custosFixosMensais / horasProdutivasMes
@@ -188,7 +188,9 @@ function calcularComponentesPeca(
   custos: Pick<CustosEntrada, 'precoKwh' | 'valorHoraTrabalho' | 'custosFixosMensais' | 'horasProdutivasMes'>,
 ): ComponentesCustoPeca {
   const custoMaterial = ((peca.pesoG * material.precoKg) / 1000) * (1 + material.taxaDesperdicio);
-  const custoEnergia = (impressora.potenciaW / 1000) * peca.tempoImpressaoH * custos.precoKwh;
+  // Consumo MEDIO durante a impressao (nao a potencia maxima/nominal do
+  // fabricante) — ver doc do topo do arquivo.
+  const custoEnergia = (impressora.potenciaMediaW / 1000) * peca.tempoImpressaoH * custos.precoKwh;
   const depreciacao = (impressora.valorAquisicao / impressora.vidaUtilH) * peca.tempoImpressaoH;
   const maoDeObra = peca.tempoPosProcessamentoH * custos.valorHoraTrabalho;
   // Rateio profissional: custos fixos por HORA produtiva da impressora,

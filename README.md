@@ -97,7 +97,7 @@ import { precificar } from './src/pricing/index.js';
 const r = precificar({
   peca: { pesoG: 50, tempoImpressaoH: 4, tempoPosProcessamentoH: 0.5 },
   material: { precoKg: 120, taxaDesperdicio: 0.05 }, // 5% de purga/desperdício
-  impressora: { potenciaW: 200, valorAquisicao: 2000, vidaUtilH: 2000 },
+  impressora: { potenciaMediaW: 200, valorAquisicao: 2000, vidaUtilH: 2000 }, // consumo MEDIO, nao a potencia maxima
   custos: {
     precoKwh: 0.95,
     valorHoraTrabalho: 20,
@@ -123,7 +123,7 @@ validados, use `calcular` diretamente.
 
 ```
 Custo Material     = (pesoG × precoKg / 1000) × (1 + taxaDesperdicio)
-Custo Energia      = (potenciaW / 1000) × tempoImpressaoH × precoKwh
+Custo Energia      = (potenciaMediaW / 1000) × tempoImpressaoH × precoKwh   (consumo MEDIO, nao a potencia maxima/nominal)
 Depreciação        = (valorAquisicao / vidaUtilH) × tempoImpressaoH
 Mão de Obra        = tempoPosProcessamentoH × valorHoraTrabalho
 Custo Fixo/Hora    = custosFixosMensais / horasProdutivasMes

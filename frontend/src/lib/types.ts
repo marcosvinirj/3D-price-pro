@@ -53,7 +53,10 @@ export interface Impressora {
   marca: string | null;
   modelo: string | null;
   dataCompra: string | null;
+  /** Potência máxima/nominal informada pelo fabricante — informativa, não entra no cálculo. */
   potenciaW: number;
+  /** Consumo médio durante a impressão — é o valor usado no cálculo do custo de energia. */
+  potenciaMediaW: number;
   valorAquisicao: number;
   vidaUtilH: number;
   custoManutencaoAnual: number;
