@@ -109,8 +109,8 @@ describe('custos variaveis (soma dos itens selecionados)', () => {
   });
 });
 
-describe('custo variavel (frete, embalagem): NAO leva provisao de falha, mas ENTRA na margem sobre o preco', () => {
-  it('custo variavel (ex.: frete) faz parte do custo total e leva a MESMA margem sobre o preco que o resto', () => {
+describe('custo variavel (frete, embalagem): repasse SEM margem e SEM provisao de falha', () => {
+  it('custo variavel (ex.: frete) e repassado no preco pelo valor EXATO — nao leva margem', () => {
     const semFrete = precificar(entradaBase());
     const comFrete = precificar(
       entradaBase({
@@ -123,12 +123,11 @@ describe('custo variavel (frete, embalagem): NAO leva provisao de falha, mas ENT
         },
       }),
     );
-    // Margem sobre o preco: preco = custoComFalha / (1 - margem). Os 3.50 de
-    // frete entram no custoComFalha (ver doc do topo do arquivo), entao o
-    // preco bruto sobe 3.50 / (1 - 0.5) = 7.00 — nao os 3.50 "exatos" do
-    // antigo repasse sem markup (regra explicita do usuario: o frete tambem
-    // deve pagar a margem, como qualquer outro custo real).
-    expect(comFrete.precoBruto - semFrete.precoBruto).toBeCloseTo(3.5 / (1 - 0.5), 4);
+    // Custo variavel fica de FORA do divisor (1 - margem) — e' somado depois,
+    // pelo valor cheio (ver doc do topo do arquivo). Regra explicita do
+    // usuario: frete/embalagem sao repasse puro, sem gerar lucro adicional —
+    // +3.50 de frete = +3.50 no preco, independente da margem escolhida.
+    expect(comFrete.precoBruto - semFrete.precoBruto).toBeCloseTo(3.5, 4);
   });
 
   it('custoTotal (exibicao) soma tudo; custoComFalha e nucleo-com-falha + repasse cheio (a falha nao repete no repasse)', () => {
@@ -145,6 +144,32 @@ describe('custo variavel (frete, embalagem): NAO leva provisao de falha, mas ENT
     );
     expect(r.custos.custoTotal).toBeCloseTo(34.56, 4); // 31.06 (nucleo) + 3.5
     expect(r.custos.custoComFalha).toBeCloseTo(37.666, 4); // 31.06*1.1 + 3.5
+  });
+
+  it('custo variavel NAO gera nem reduz lucro — so e recuperado (lucro identico com ou sem frete/embalagem)', () => {
+    const semRepasse = precificar(entradaBase());
+    const comRepasse = precificar(
+      entradaBase({
+        custos: {
+          precoKwh: 0.95,
+          valorHoraTrabalho: 20,
+          custosFixosMensais: 1000,
+          horasProdutivasMes: 400,
+          custoVariavel: 2 + 3.5, // embalagem + frete
+        },
+      }),
+    );
+    // Lucro (absoluto) = preco da parte com margem - custos que recebem
+    // margem (nucleo+insumos) — custo variavel some da conta dos dois lados
+    // (soma no preco, soma no custo), entao o LUCRO EM VALOR nao muda.
+    expect(comRepasse.margem.lucro).toBeCloseTo(semRepasse.margem.lucro, 2);
+    // Margem SOBRE O PRECO (lucro/precoCobrado) dilui naturalmente: mesmo
+    // lucro absoluto dividido por um preco cobrado maior (que cresceu so'
+    // pelo repasse) da' uma fracao menor. Nao e' perda de lucro — e' so' o
+    // repasse "diluindo" o % quando medido sobre o preco total.
+    expect(comRepasse.margem.real).toBeLessThan(semRepasse.margem.real);
+    // O preco final sobe exatamente o valor do repasse (2 + 3.5 = 5.50).
+    expect(comRepasse.precoBruto - semRepasse.precoBruto).toBeCloseTo(5.5, 4);
   });
 });
 

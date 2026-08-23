@@ -131,10 +131,11 @@ Custo Fixo Rateado = Custo Fixo/Hora × tempoImpressaoH
 Custo Núcleo       = Material + Energia + Depreciação + Mão de Obra + Custo Fixo Rateado
 Custo Insumos      = Σ (insumo.valorUnitario × insumo.quantidade) — argola, escovinha, lâmpada…
 Custo Variável     = Σ dos custos variáveis selecionados (embalagem, frete, etiqueta…)
-Custo Repassado    = Custo Insumos + Custo Variável
-Custo Total        = Custo Núcleo + Custo Repassado           (exibição, sem margem)
-Custo Total c/ Falha = Custo Núcleo × (1+taxaFalha) + Custo Repassado   (custo TOTAL real)
-Preço Final        = arredondar( Custo Total c/ Falha / (1 − margemLucro) )
+Custo Total        = Custo Núcleo + Custo Insumos + Custo Variável    (exibição, sem margem)
+Custo c/ Margem    = Custo Núcleo × (1+taxaFalha) + Custo Insumos     (única parte que leva margem)
+Preço c/ Margem    = Custo c/ Margem / (1 − margemLucro)
+Preço Final        = arredondar( Preço c/ Margem + Custo Variável )   (frete/embalagem: repasse EXATO, sem margem)
+Custo Total c/ Falha = Custo c/ Margem + Custo Variável               (custo TOTAL real, usado no lucro/margem exibidos)
 Preço Cobrado      = Preço Final − desconto
 ```
 
@@ -143,17 +144,28 @@ depreciação, mão de obra, custo fixo) — o que de fato se perde numa
 impressão malsucedida; insumos ficam intactos no estoque e custo variável só
 é gasto quando a peça de fato sai.
 
-**Margem de lucro é sobre o PREÇO FINAL DE VENDA, não markup sobre o custo.**
-`margemLucro` é a fração do preço de venda que vira lucro — daí a fórmula
-`preço = custo / (1 − margem)` (isolando P em `margem = (P − custo) / P`).
-Consequência direta: **todo** custo real entra no cálculo, inclusive o Custo
-Variável (frete, embalagem) — que no modelo antigo era repassado "por fora",
-sem levar margem. `margemLucro`/`margemMinima` precisam ser **< 100%**: nessa
-margem a fórmula diverge (denominador zero ou negativo). `r.margem.real` /
-`r.margem.planejada` / `r.margem.minima` são todos margem-sobre-preço; pra
-quem quer enxergar o mesmo lucro como "quanto multipliquei o custo", use
-`r.margem.markupSobreCusto` (lucro / custo) — os dois números nunca coincidem
-(ex.: 50% de margem sobre o preço = 100% de markup sobre o custo).
+**Margem de lucro é sobre o PREÇO FINAL DE VENDA, não markup sobre o custo**,
+e incide **só sobre Custo Núcleo + Insumos** — `margemLucro` é a fração desse
+preço-com-margem que vira lucro, daí `preço c/ margem = custo c/ margem / (1
+− margem)` (isolando P em `margem = (P − custo) / P`).
+
+**Custo Variável (frete, embalagem) é repasse puro, sem margem**: decisão
+explícita do usuário — o cliente paga um preço final único, e frete/
+embalagem entram nesse preço pelo valor **exato**, somado só depois da
+divisão por `(1 − margem)`. Diferente de Insumos (que viram parte física do
+produto e levam a mesma margem que o núcleo), Custo Variável fica de fora do
+divisor: adicionar X de custo variável aumenta o preço final em **exatamente
+X**, independente da margem escolhida (ex.: +€3,50 de frete = +€3,50 no
+preço, nunca `3,50 / (1 − margem)`). Consequência: como o custo variável
+entra igual no preço (soma) e no custo total (soma), ele se cancela no
+lucro — não gera nem reduz lucro, só é recuperado.
+
+`margemLucro`/`margemMinima` precisam ser **< 100%**: nessa margem a fórmula
+diverge (denominador zero ou negativo). `r.margem.real` / `r.margem.planejada`
+/ `r.margem.minima` são todos margem-sobre-preço; pra quem quer enxergar o
+mesmo lucro como "quanto multipliquei o custo", use `r.margem.markupSobreCusto`
+(lucro / custo) — os dois números nunca coincidem (ex.: 50% de margem sobre
+o preço = 100% de markup sobre o custo).
 
 ## Regras de negócio implementadas
 

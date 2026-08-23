@@ -888,7 +888,7 @@ export function SimuladorPage() {
                 <Linha rotulo="Insumos (leva margem, sem provisão de falha)" valor={r.custos.custoInsumos} fmt={fmt} />
               )}
               {r.custos.custoVariavel > 0 && (
-                <Linha rotulo="Custos variáveis (leva margem, sem provisão de falha)" valor={r.custos.custoVariavel} fmt={fmt} />
+                <Linha rotulo="Custos variáveis (repasse, sem margem nem provisão de falha)" valor={r.custos.custoVariavel} fmt={fmt} />
               )}
               <div className="my-2 border-t border-slate-100 dark:border-slate-800" />
               <Linha rotulo="Subtotal (sem provisão de falha)" valor={r.custos.custoTotal} fmt={fmt} />
@@ -970,17 +970,17 @@ function InteligenciaNegocio({
   fmt: (v: number) => string;
 }) {
   const custoComFalha = r.custos.custoComFalha;
-  // Margem SOBRE O PRECO: preco = custo / (1 - margem) — replica exatamente
-  // a formula do backend (finalizarPreco em engine.ts) pra sugerir preco
-  // minimo/recomendado. custoComFalha ja soma TODOS os custos reais
-  // (inclusive o variavel — frete/embalagem), entao nenhum componente fica
-  // de fora da conta.
-  const precoMinimo = custoComFalha / (1 - r.margem.minima);
+  // Custo variavel (frete/embalagem) e' repasse SEM margem — fica de fora do
+  // divisor (1 - margem), igual no backend (finalizarPreco em engine.ts).
+  // custoComMargem = so' nucleo(+falha) + insumos, a unica parte que leva
+  // margem; custoVariavel e' somado depois, pelo valor exato.
+  const custoComMargem = custoComFalha - r.custos.custoVariavel;
+  const precoMinimo = custoComMargem / (1 - r.margem.minima) + r.custos.custoVariavel;
   // Sugestao de margem "confortavel": pelo menos 50%, ou 30 pontos acima da
   // minima — nunca >= 90% (perto de 100% a formula diverge; um teto
   // sanitario evita sugerir um preco absurdo quando a minima ja e' alta).
   const margemRecomendada = Math.min(0.9, Math.max(0.5, r.margem.minima + 0.3));
-  const precoRecomendado = custoComFalha / (1 - margemRecomendada);
+  const precoRecomendado = custoComMargem / (1 - margemRecomendada) + r.custos.custoVariavel;
   const lucroPorHora = tempoImpressaoH > 0 ? r.margem.lucro / tempoImpressaoH : 0;
 
   const alertas: { tipo: 'erro' | 'aviso'; msg: string }[] = [];
