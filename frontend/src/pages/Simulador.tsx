@@ -750,6 +750,21 @@ export function SimuladorPage() {
                   Com desconto: <span className="font-semibold text-slate-700 dark:text-slate-200">{fmt(r.precoCobrado)}</span>
                 </div>
               )}
+              {r && (() => {
+                // Puramente visual: preço final da ENCOMENDA (ja com tudo — nucleo
+                // com falha, insumos, variavel/embalagem — ver engine.ts) dividido
+                // pela soma das quantidades das pecas. NAO redistribui nem recalcula
+                // nenhum custo/margem/embalagem — so' informa a media por unidade.
+                const quantidadeTotal = r.itens.reduce((s, i) => s + i.quantidade, 0);
+                return quantidadeTotal > 1 ? (
+                  <div className="text-sm text-slate-500 dark:text-slate-400">
+                    Preço médio por unidade ({quantidadeTotal}x):{' '}
+                    <span className="font-semibold text-slate-700 dark:text-slate-200">
+                      {fmt(r.precoFinal / quantidadeTotal)}
+                    </span>
+                  </div>
+                ) : null;
+              })()}
             </div>
             {r && (
               <div className="text-right">
