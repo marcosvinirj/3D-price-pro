@@ -109,29 +109,77 @@ describe('custos variaveis (soma dos itens selecionados)', () => {
   });
 });
 
-describe('custo variavel (frete, embalagem): NAO leva provisao de falha, mas ENTRA na margem sobre o preco', () => {
-  it('custo variavel (ex.: frete) faz parte do custo TOTAL e leva a MESMA margem sobre o preco que o resto', () => {
-    const semFrete = precificar(entradaBase());
-    const comFrete = precificar(
-      entradaBase({
-        custos: {
-          precoKwh: 0.95,
-          valorHoraTrabalho: 20,
-          custosFixosMensais: 1000,
-          horasProdutivasMes: 400,
-          custoVariavel: 3.5,
-        },
-      }),
-    );
-    // Margem sobre o preco final TOTAL: preco = custoComFalha / (1 - margem).
-    // Os 3.50 de frete entram no custoComFalha junto com tudo o mais, entao o
-    // preco bruto sobe 3.50 / (1 - 0.5) = 7.00 — nao os 3.50 "exatos" de um
-    // repasse sem markup. Decisao explicita do usuario: nao existe "lucro
-    // sobre o frete" separado — e' tudo a MESMA margem sobre o MESMO preco.
-    expect(comFrete.precoBruto - semFrete.precoBruto).toBeCloseTo(3.5 / (1 - 0.5), 4);
+describe('custo variavel (frete, embalagem): repasse SEM margem e SEM provisao de falha', () => {
+  // Base limpa reaproveitada em varios testes: custoComMargem (nucleo com
+  // falha + insumos) = 3.00 exatos — 300g de material a 10/kg, sem falha/
+  // energia/depreciacao/mao de obra/custo fixo (todos zerados de proposito).
+  // margem 60% => precoDoProduto = 3.00 / (1 - 0.6) = 7.50, igual ao
+  // exemplo do usuario.
+  function baseLimpa(custoVariavel: number, margemLucro = 0.6): EntradaPrecificacaoInput {
+    return {
+      peca: { pesoG: 300, tempoImpressaoH: 0, tempoPosProcessamentoH: 0 },
+      material: { precoKg: 10, taxaDesperdicio: 0 },
+      impressora: { potenciaMediaW: 1, valorAquisicao: 0, vidaUtilH: 1 },
+      custos: { precoKwh: 0, valorHoraTrabalho: 0, custosFixosMensais: 0, horasProdutivasMes: 1, custoVariavel },
+      parametros: { taxaFalha: 0, margemLucro, margemMinima: 0 },
+      arredondamento: { modo: 'nenhum' },
+    };
+  }
+
+  it('1. sem embalagem e sem frete: preco = custoComMargem / (1 - margem) = 3.00 / 0.4 = 7.50', () => {
+    const r = precificar(baseLimpa(0));
+    expect(r.custos.custoComFalha).toBeCloseTo(3, 4);
+    expect(r.precoFinal).toBeCloseTo(7.5, 2);
+    expect(r.margem.lucro).toBeCloseTo(4.5, 2);
+    expect(r.margem.real).toBeCloseTo(0.6, 4); // sem repasse, margem real = planejada
   });
 
-  it('custoTotal (exibicao) soma tudo; custoComFalha e nucleo-com-falha + repasse cheio (a falha nao repete no repasse)', () => {
+  it('2. so embalagem (2.00): 7.50 + 2.00 = 9.50', () => {
+    const r = precificar(baseLimpa(2));
+    expect(r.precoFinal).toBeCloseTo(9.5, 2);
+    expect(r.margem.lucro).toBeCloseTo(4.5, 2); // lucro do produto nao muda
+  });
+
+  it('3. so frete (3.50): 7.50 + 3.50 = 11.00', () => {
+    const r = precificar(baseLimpa(3.5));
+    expect(r.precoFinal).toBeCloseTo(11, 2);
+    expect(r.margem.lucro).toBeCloseTo(4.5, 2);
+  });
+
+  it('4. embalagem + frete (5.50): 7.50 + 2.00 + 3.50 = 13.00, lucro 4.50, margem real 34.62%', () => {
+    const r = precificar(baseLimpa(2 + 3.5));
+    expect(r.custos.custoComFalha).toBeCloseTo(8.5, 4); // custo TOTAL, custo variavel nunca some daqui
+    expect(r.precoBruto).toBeCloseTo(13, 4);
+    expect(r.precoFinal).toBeCloseTo(13, 2);
+    expect(r.margem.lucro).toBeCloseTo(4.5, 2);
+    // Margem REAL sobre o preco TOTAL fica abaixo da planejada (60%) de
+    // proposito — e' o esperado quando ha' repasse sem margem (nao e' erro).
+    expect(r.margem.real).toBeCloseTo(0.3462, 3);
+    expect(r.margem.planejada).toBe(0.6); // planejada continua sendo a margem do PRODUTO, nao a real total
+  });
+
+  it('5. aumentar embalagem de 2.00 para 3.00 aumenta o preco final em EXATAMENTE 1.00', () => {
+    const com2 = precificar(baseLimpa(2 + 3.5));
+    const com3 = precificar(baseLimpa(3 + 3.5));
+    expect(com3.precoFinal - com2.precoFinal).toBeCloseTo(1, 4);
+  });
+
+  it('6. aumentar frete de 3.50 para 5.00 aumenta o preco final em EXATAMENTE 1.50', () => {
+    const comFrete350 = precificar(baseLimpa(2 + 3.5));
+    const comFrete500 = precificar(baseLimpa(2 + 5));
+    expect(comFrete500.precoFinal - comFrete350.precoFinal).toBeCloseTo(1.5, 4);
+  });
+
+  it('7. alterar embalagem/frete NAO altera o lucro gerado pelo produto (so o preco final e a margem real total)', () => {
+    const semRepasse = precificar(baseLimpa(0));
+    const comRepasse = precificar(baseLimpa(2 + 3.5));
+    const repasseMaior = precificar(baseLimpa(10 + 20));
+    expect(semRepasse.margem.lucro).toBeCloseTo(4.5, 2);
+    expect(comRepasse.margem.lucro).toBeCloseTo(4.5, 2);
+    expect(repasseMaior.margem.lucro).toBeCloseTo(4.5, 2);
+  });
+
+  it('custoTotal (exibicao) soma tudo; custoComFalha e nucleo-com-falha + insumos + repasse cheio (a falha nao repete no repasse)', () => {
     const r = precificar(
       entradaBase({
         custos: {
@@ -147,52 +195,20 @@ describe('custo variavel (frete, embalagem): NAO leva provisao de falha, mas ENT
     expect(r.custos.custoComFalha).toBeCloseTo(37.666, 4); // 31.06*1.1 + 3.5
   });
 
-  it('lucro cresce proporcionalmente ao custo variavel — margem sobre o preco NAO dilui (embalagem/frete recebem a MESMA margem)', () => {
-    const semRepasse = precificar(entradaBase());
-    const comRepasse = precificar(
+  it('custo variavel (ex.: frete) e repassado no preco pelo valor EXATO — nao leva margem', () => {
+    const semFrete = precificar(entradaBase());
+    const comFrete = precificar(
       entradaBase({
         custos: {
           precoKwh: 0.95,
           valorHoraTrabalho: 20,
           custosFixosMensais: 1000,
           horasProdutivasMes: 400,
-          custoVariavel: 2 + 3.5, // embalagem + frete
+          custoVariavel: 3.5,
         },
       }),
     );
-    const custoVariavel = 2 + 3.5;
-    const margem = 0.5;
-    // lucro = custoComFalha * margem / (1 - margem) (sem desconto/arredondamento
-    // de sobra) — cada euro de custo variavel adicional gera margem/(1-margem)
-    // de lucro extra, EXATAMENTE como qualquer outro custo real.
-    expect(comRepasse.margem.lucro - semRepasse.margem.lucro).toBeCloseTo(
-      custoVariavel * (margem / (1 - margem)),
-      2,
-    );
-    // Margem sobre o preco NAO dilui: e' a mesma fracao com ou sem repasse,
-    // porque o repasse agora entra no MESMO calculo de margem que o resto.
-    expect(comRepasse.margem.real).toBeCloseTo(semRepasse.margem.real, 2);
-    // O preco final sobe o valor do repasse JA COM a margem sobre ele: 5.50 / (1-0.5) = 11.00.
-    expect(comRepasse.precoBruto - semRepasse.precoBruto).toBeCloseTo(custoVariavel / (1 - margem), 4);
-  });
-
-  it('exemplo do usuario: custo total 8.50 (3.00 nucleo/insumos + 2.00 embalagem + 3.50 frete), margem 60% => preco 21.25, lucro 12.75', () => {
-    // Base com custoNucleo+insumos = 3.00 exatos: 300g de material a 10/kg,
-    // sem falha/energia/depreciacao/mao de obra/custo fixo (todos zerados
-    // de proposito pra isolar o exemplo).
-    const r = precificar({
-      peca: { pesoG: 300, tempoImpressaoH: 0, tempoPosProcessamentoH: 0 },
-      material: { precoKg: 10, taxaDesperdicio: 0 },
-      impressora: { potenciaMediaW: 1, valorAquisicao: 0, vidaUtilH: 1 },
-      custos: { precoKwh: 0, valorHoraTrabalho: 0, custosFixosMensais: 0, horasProdutivasMes: 1, custoVariavel: 2 + 3.5 },
-      parametros: { taxaFalha: 0, margemLucro: 0.6, margemMinima: 0 },
-      arredondamento: { modo: 'nenhum' },
-    });
-    expect(r.custos.custoComFalha).toBeCloseTo(8.5, 4);
-    expect(r.precoBruto).toBeCloseTo(21.25, 4);
-    expect(r.precoFinal).toBeCloseTo(21.25, 2);
-    expect(r.margem.lucro).toBeCloseTo(12.75, 2);
-    expect(r.margem.real).toBeCloseTo(0.6, 4);
+    expect(comFrete.precoBruto - semFrete.precoBruto).toBeCloseTo(3.5, 4);
   });
 });
 

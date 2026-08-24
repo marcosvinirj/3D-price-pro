@@ -132,8 +132,10 @@ Custo Núcleo       = Material + Energia + Depreciação + Mão de Obra + Custo 
 Custo Insumos      = Σ (insumo.valorUnitario × insumo.quantidade) — argola, escovinha, lâmpada…
 Custo Variável     = Σ dos custos variáveis selecionados (embalagem, frete, etiqueta…)
 Custo Total        = Custo Núcleo + Custo Insumos + Custo Variável    (exibição, sem markup)
-Custo Total c/ Falha = Custo Núcleo × (1+taxaFalha) + Custo Insumos + Custo Variável   (custo TOTAL real)
-Preço Final        = arredondar( Custo Total c/ Falha / (1 − margemLucro) )
+Custo c/ Margem    = Custo Núcleo × (1+taxaFalha) + Custo Insumos     (única parte que leva margem)
+Preço do Produto   = Custo c/ Margem / (1 − margemLucro)
+Preço Final        = arredondar( Preço do Produto + Custo Variável )   (frete/embalagem: valor EXATO, sem margem)
+Custo Total c/ Falha = Custo c/ Margem + Custo Variável               (custo TOTAL real, usado no lucro/margem exibidos)
 Preço Cobrado      = Preço Final − desconto
 ```
 
@@ -142,17 +144,24 @@ depreciação, mão de obra, custo fixo) — o que de fato se perde numa
 impressão malsucedida; insumos ficam intactos no estoque e custo variável só
 é gasto quando a peça de fato sai.
 
-**Margem de lucro é sobre o PREÇO FINAL TOTAL DE VENDA, não markup sobre o
-custo.** `margemLucro` é a fração do preço de venda que vira lucro,
-considerando **todos** os custos da encomenda juntos no mesmo divisor —
-Núcleo (com falha), Insumos **e** Custo Variável (frete, embalagem) — daí
-`preço = custo total / (1 − margem)` (isolando P em `margem = (P − custo) /
-P`). Decisão explícita do usuário: depois de pagar todos os custos, inclusive
-frete/embalagem, a margem efetiva sobre o preço final deve ser a margem
-planejada — não existe "lucro sobre o frete" como categoria separada, é a
-mesma margem sobre o mesmo preço. Custo Variável continua aparecendo à parte
-em `custos.custoVariavel` só pra exibição (quanto está sendo gasto), mas
-nunca sai do custo total usado pra formar o preço.
+**Margem de lucro é sobre o PREÇO DO PRODUTO, não markup sobre o custo, e
+não sobre o preço final total.** `margemLucro` incide **só sobre Custo
+Núcleo + Insumos** — `preço do produto = custo c/ margem / (1 − margem)`
+(isolando P em `margem = (P − custo) / P`).
+
+**Custo Variável (frete, embalagem) é repasse puro, sem margem**: decisão
+explícita do usuário — depois de calcular o preço do produto com a margem
+desejada, frete/embalagem são somados por cima, pelo valor **exato**.
+Diferente de Insumos (que viram parte física do produto e levam a mesma
+margem que o núcleo), Custo Variável fica de fora do divisor: adicionar X
+de custo variável aumenta o preço final em **exatamente X**, independente
+da margem escolhida, e **não altera o lucro do produto**. Consequência
+esperada: a margem **real** sobre o preço final **total** (`r.margem.real`)
+fica **menor** que a margem planejada sempre que há custo variável — não é
+um erro, é o repasse sem margem "diluindo" a fração quando medida sobre o
+preço total (ex.: custo com margem €3,00 + margem 60% → preço do produto
+€7,50; +€2,00 embalagem +€3,50 frete → preço final €13,00, lucro €4,50,
+margem real 34,62%).
 
 `margemLucro`/`margemMinima` precisam ser **< 100%**: nessa margem a fórmula
 diverge (denominador zero ou negativo). `r.margem.real` / `r.margem.planejada`

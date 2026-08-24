@@ -17,8 +17,10 @@
  *   Custo Variavel     = soma dos custos variaveis selecionados (frete, embalagem...)
  *   Custo Total        = Custo Nucleo + Custo Insumos + Custo Variavel  (exibicao, sem markup)
  *   Nucleo c/ Falha    = Custo Nucleo * (1 + taxaFalha)
- *   Custo c/ Falha     = Nucleo c/ Falha + Custo Insumos + Custo Variavel   (custo TOTAL: TUDO que sai do bolso)
- *   Preco (bruto)      = Custo c/ Falha / (1 - margemLucro)
+ *   Custo c/ Margem    = Nucleo c/ Falha + Custo Insumos   (unica parte que leva margem)
+ *   Preco do Produto   = Custo c/ Margem / (1 - margemLucro)
+ *   Preco (bruto)      = Preco do Produto + Custo Variavel   (frete/embalagem: valor EXATO, sem margem)
+ *   Custo c/ Falha     = Custo c/ Margem + Custo Variavel   (custo TOTAL real: TUDO que sai do bolso — usado pra lucro/margem exibidos)
  *   Preco Final        = arredondamento(Preco bruto)
  *   Preco Cobrado      = Preco Final - desconto (desconto so sobre o final)
  *
@@ -28,24 +30,32 @@
  * proxima peca se a impressao falhar, e custo variavel (frete, embalagem) so'
  * e' gasto quando a peca de fato sai — nenhum dos dois repete com a falha.
  *
- * MARGEM SOBRE O PRECO FINAL TOTAL (nao markup sobre o custo): `margemLucro`
- * e' a fracao do PRECO DE VENDA que vira lucro, considerando TODOS os custos
- * da encomenda — nucleo (com falha), insumos E custo variavel (frete,
- * embalagem) juntos no mesmo denominador. Por isso o preco e' obtido
- * isolando P na equacao `margemLucro = (P - custoComFalha) / P`, que da'
- * `P = custoComFalha / (1 - margemLucro)`. Decisao explicita do usuario:
- * depois de pagar TODOS os custos (inclusive frete/embalagem), a margem
- * efetiva sobre o preco final deve ser a margem planejada — nao existe
- * "lucro sobre o frete" como categoria separada, e' tudo a MESMA margem
- * sobre o MESMO preco final.
+ * MARGEM SOBRE O PRECO DO PRODUTO (nao markup sobre o custo, e nao sobre o
+ * preco final total): `margemLucro` e' a fracao do preco do PRODUTO (nucleo
+ * com falha + insumos) que vira lucro — por isso o preco e' obtido isolando P
+ * na equacao `margemLucro = (P - custoComMargem) / P`, que da' `P =
+ * custoComMargem / (1 - margemLucro)`.
  *
- * Custo variavel (frete, embalagem) continua aparecendo separado em
- * `DetalhamentoCustos.custoVariavel` (pra exibicao — quanto esta sendo
- * gasto com cada categoria), mas nunca "desaparece" do custo usado pra
- * formar o preco: `custoComFalha` sempre inclui o valor cheio dele.
- * `DetalhamentoMargem.markupSobreCusto` e' o MESMO lucro lido como
- * proporcao do CUSTO (lucro / custo) em vez do preco (lucro / preco) — os
- * dois numeros sao sempre diferentes e nao devem ser confundidos.
+ * CUSTO VARIAVEL (frete, embalagem) E' REPASSE PURO, SEM MARGEM: decisao
+ * explicita do usuario — depois de calcular o preco do produto com a margem
+ * desejada, frete/embalagem sao somados por cima, pelo valor EXATO (nao pelo
+ * divisor (1 - margem)). Diferente de insumos (que viram parte fisica do
+ * produto e levam a mesma margem que o nucleo): custo variavel fica de FORA
+ * da divisao. Consequencia: adicionar X de custo variavel aumenta o preco
+ * final em EXATAMENTE X, independente da margem escolhida (ex.: +1.50 de
+ * frete = +1.50 no preco, nao 1.50/(1-margem)) — e nao altera o lucro do
+ * produto. A margem REAL sobre o preco final TOTAL (lucro/precoCobrado, ver
+ * `DetalhamentoMargem.real`) fica, por construcao, MENOR que a margem
+ * planejada sempre que ha' custo variavel — isso e' esperado e correto (o
+ * repasse "dilui" a margem quando medida sobre o preco total), NAO um erro
+ * a corrigir.
+ *
+ * `custoComFalha` (usado pra `margem.lucro`/`margem.real`/`markupSobreCusto`)
+ * continua sendo o custo TOTAL real (nucleo+falha + insumos + variavel) —
+ * custo variavel nunca "desaparece" dele, so' fica de fora do DIVISOR que
+ * forma o preco. Ver `DetalhamentoMargem.markupSobreCusto` pra quem ainda
+ * quer enxergar o lucro como proporcao do CUSTO (lucro / custo), e nao do
+ * preco (lucro / preco) — os dois numeros sao sempre diferentes.
  *
  * `quantidade` e' o numero de unidades identicas que uma peca representa
  * (ex.: 25 canudos impressos juntos na mesma leva). E' puramente
@@ -213,11 +223,10 @@ function calcularComponentesPeca(
 /**
  * Parte final do calculo: recebe o custo NUCLEO (material/energia/
  * depreciacao/mao de obra/custo fixo — de uma ou varias pecas) separado de
- * INSUMOS e de CUSTO VARIAVEL (frete/embalagem) — nenhum dos dois leva
- * provisao de falha, mas os dois levam a MESMA margem sobre o preco que o
- * nucleo (ver doc do topo do arquivo) — e aplica provisao de falha, margem,
- * arredondamento, desconto e detalhamento de margem. Compartilhada por
- * `calcular` e `calcularMultiplo`.
+ * INSUMOS (componente do produto, leva margem mas nao falha) e de CUSTO
+ * VARIAVEL (frete/embalagem, repasse puro — sem falha e sem margem), e
+ * aplica provisao de falha, margem, arredondamento, desconto e detalhamento
+ * de margem. Compartilhada por `calcular` e `calcularMultiplo`.
  */
 function finalizarPreco(
   custoNucleo: number,
@@ -229,15 +238,22 @@ function finalizarPreco(
 ): Omit<ResultadoPrecificacao, 'custos'> & { custoComFalha: number } {
   // Falha incide so' sobre o nucleo (ver doc do topo do arquivo).
   const custoNucleoComFalha = custoNucleo * (1 + parametros.taxaFalha);
-  // Custo TOTAL: TUDO que sai do bolso pra entregar a peca — nucleo (com
-  // falha), insumos E custo variavel (frete, embalagem) juntos. E' o
-  // denominador da margem sobre o preco: nenhum componente fica de fora
-  // (decisao explicita do usuario — ver doc do topo do arquivo).
-  const custoComFalha = custoNucleoComFalha + custoInsumos + custoVariavel;
-  // Margem SOBRE O PRECO DE VENDA FINAL, sobre o custo TOTAL: preco = custo /
-  // (1 - margem). O schema (`fracaoMargemPreco`) garante margemLucro < 1,
-  // entao o divisor nunca chega a zero/negativo aqui.
-  const precoBruto = custoComFalha / (1 - parametros.margemLucro);
+  // Custo QUE LEVA MARGEM: nucleo (com falha) + insumos. Custo variavel
+  // (frete, embalagem) fica de FORA daqui de proposito — e' repasse puro,
+  // sem margem (ver doc do topo do arquivo).
+  const custoComMargem = custoNucleoComFalha + custoInsumos;
+  // Custo TOTAL real: TUDO que sai do bolso pra entregar a peca — usado pra
+  // lucro/margem exibidos (nao pra construir o preco; ver `precoBruto`
+  // abaixo).
+  const custoComFalha = custoComMargem + custoVariavel;
+  // Margem SOBRE O PRECO DO PRODUTO, aplicada SO' sobre custoComMargem: preco
+  // = custo / (1 - margem). O schema (`fracaoMargemPreco`) garante
+  // margemLucro < 1, entao o divisor nunca chega a zero/negativo aqui. Custo
+  // variavel e' somado DEPOIS, pelo valor exato — repasse sem margem
+  // (decisao explicita do usuario: frete/embalagem nao devem gerar lucro
+  // adicional).
+  const precoDoProduto = custoComMargem / (1 - parametros.margemLucro);
+  const precoBruto = precoDoProduto + custoVariavel;
   const precoFinal = aplicarArredondamento(precoBruto, arredondamento);
 
   // Desconto incide APENAS sobre o preco final, nunca sobre os custos (regra 7).
@@ -258,10 +274,11 @@ function finalizarPreco(
     };
   }
 
-  // Margem real SOBRE O PRECO efetivamente cobrado (apos desconto): lucro /
-  // precoCobrado. Custo TOTAL (nucleo com falha + insumos + variavel) entra
-  // inteiro no lucro — nenhum componente fica de fora da margem (ver doc do
-  // topo do arquivo).
+  // Margem real SOBRE O PRECO COBRADO (apos desconto): lucro / precoCobrado.
+  // custoComFalha (TOTAL real, inclusive custo variavel) entra inteiro no
+  // lucro — mas como custo variavel NAO teve margem aplicada na formacao do
+  // preco, ele reduz a margem REAL sobre o preco total (esperado — ver doc
+  // do topo do arquivo).
   const lucro = precoCobrado - custoComFalha;
   const margemReal = precoCobrado > 0 ? lucro / precoCobrado : 0;
 
