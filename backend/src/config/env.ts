@@ -13,6 +13,8 @@ const schema = z.object({
   // dependem disso checam e avisam com erro claro na hora do uso.
   STRIPE_PRICE_ASSINATURA: z.string().default(''),
   STRIPE_PRICE_PACOTE: z.string().default(''),
+  /** Assinatura mensal com creditos ILIMITADOS (liga User.creditosIlimitados). */
+  STRIPE_PRICE_ILIMITADO: z.string().default(''),
   STRIPE_WEBHOOK_SECRET: z.string().default(''),
   // Pra onde o Stripe Checkout/Portal volta depois do pagamento.
   FRONTEND_URL: z.string().default('http://localhost:5173'),

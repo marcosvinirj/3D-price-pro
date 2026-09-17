@@ -133,6 +133,10 @@ export const criarCheckoutAssinatura = (usuarioId: number) =>
 export const criarCheckoutPacote = (usuarioId: number) =>
   criarCheckout(usuarioId, env.STRIPE_PRICE_PACOTE, 'payment');
 
+/** Assinatura mensal com creditos ILIMITADOS. */
+export const criarCheckoutIlimitado = (usuarioId: number) =>
+  criarCheckout(usuarioId, env.STRIPE_PRICE_ILIMITADO, 'subscription');
+
 /** Sessao do Portal do Cliente Stripe — gerenciar/cancelar assinatura, ver faturas. */
 export async function criarPortalSessao(usuarioId: number): Promise<string> {
   const customerId = await obterOuCriarStripeCustomer(usuarioId);
@@ -150,26 +154,64 @@ async function usuarioIdPorCustomer(customerId: string | null): Promise<number |
   return user?.id ?? null;
 }
 
+/** Status do Stripe em que a assinatura da' acesso (mesma regra usada na UI). */
+function assinaturaConcedeAcesso(status: string): boolean {
+  return status === 'active' || status === 'trialing';
+}
+
+/** `true` se este preco e' o do plano de creditos ILIMITADOS. */
+function ehPlanoIlimitado(stripePriceId: string): boolean {
+  return !!env.STRIPE_PRICE_ILIMITADO && stripePriceId === env.STRIPE_PRICE_ILIMITADO;
+}
+
 /** Grava/atualiza o estado local da assinatura a partir do objeto do Stripe. */
 async function sincronizarAssinatura(usuarioId: number, sub: Stripe.Subscription): Promise<void> {
   const item = sub.items.data[0];
   const periodoAtualFim = new Date((item?.current_period_end ?? 0) * 1000);
+  const stripePriceId = item?.price.id ?? '';
+  // Qual plano estava valendo ANTES deste evento — usado logo abaixo pra
+  // detectar troca de plano (ilimitado -> outro) no Portal do Cliente.
+  const anterior = await prisma.assinatura.findUnique({
+    where: { usuarioId },
+    select: { stripePriceId: true },
+  });
   await prisma.assinatura.upsert({
     where: { usuarioId },
     create: {
       usuarioId,
       stripeSubscriptionId: sub.id,
-      stripePriceId: item?.price.id ?? '',
+      stripePriceId,
       status: sub.status,
       periodoAtualFim,
     },
     update: {
       stripeSubscriptionId: sub.id,
-      stripePriceId: item?.price.id ?? '',
+      stripePriceId,
       status: sub.status,
       periodoAtualFim,
     },
   });
+
+  // Plano ILIMITADO: liga/desliga a flag do usuario conforme a assinatura.
+  //
+  // So' mexe na flag quando o evento e' DESTE plano — de proposito. A mesma
+  // flag tambem serve de isencao manual/administrativa (contas cortesia), e
+  // um evento de OUTRO plano (Pro, por ex.) nao pode revogar essa isencao
+  // silenciosamente. Assim, a flag so' cai quando a assinatura ilimitada do
+  // proprio usuario deixa de estar ativa.
+  if (ehPlanoIlimitado(stripePriceId)) {
+    await prisma.user.update({
+      where: { id: usuarioId },
+      data: { creditosIlimitados: assinaturaConcedeAcesso(sub.status) },
+    });
+  } else if (anterior && ehPlanoIlimitado(anterior.stripePriceId)) {
+    // Trocou do ilimitado pra outro plano (ex.: pelo Portal do Cliente da
+    // Stripe): perde o ilimitado. Sem isso continuaria com acesso ilimitado
+    // pagando o plano mais barato. So' entra aqui quem JA tinha assinatura
+    // ilimitada registrada — isencao manual (que nao tem assinatura
+    // ilimitada anterior) continua intocada.
+    await prisma.user.update({ where: { id: usuarioId }, data: { creditosIlimitados: false } });
+  }
 }
 
 /**
@@ -214,8 +256,26 @@ export async function processarEventoStripe(event: Stripe.Event): Promise<void> 
       if (!subscriptionId) break; // fatura avulsa nao ligada a assinatura
       const usuarioId = await usuarioIdPorCustomer(invoice.customer as string | null);
       if (usuarioId) {
-        // Cobre tanto a 1a cobranca da assinatura quanto cada renovacao mensal.
-        await creditar(usuarioId, CREDITOS_ASSINATURA, 'assinatura_mensal', invoice.id);
+        // O plano ILIMITADO nao credita saldo (o acesso vem da flag
+        // `creditosIlimitados`, ligada em `sincronizarAssinatura`). Descobre
+        // o preco pela propria fatura e, se nao der, pela assinatura local ja
+        // sincronizada. Se nem assim der pra saber, credita — errar creditando
+        // um assinante ilimitado e' inofensivo (o saldo nem e' consultado),
+        // enquanto NAO creditar um assinante Pro que pagou seria um bug caro.
+        const precoDaFatura =
+          (invoice.lines?.data?.[0] as { price?: { id?: string } } | undefined)?.price?.id ?? null;
+        const precoLocal = precoDaFatura
+          ? null
+          : (await prisma.assinatura.findUnique({
+              where: { usuarioId },
+              select: { stripePriceId: true },
+            }))?.stripePriceId ?? null;
+        const preco = precoDaFatura ?? precoLocal;
+
+        if (!preco || !ehPlanoIlimitado(preco)) {
+          // Cobre tanto a 1a cobranca da assinatura quanto cada renovacao mensal.
+          await creditar(usuarioId, CREDITOS_ASSINATURA, 'assinatura_mensal', invoice.id);
+        }
       }
       break;
     }

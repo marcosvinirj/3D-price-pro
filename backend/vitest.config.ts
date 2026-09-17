@@ -19,6 +19,11 @@ export default defineConfig({
       // Segredo FIXO so' pra teste (nao e' o do Stripe de verdade) — os
       // testes de webhook assinam o payload sintetico com este mesmo valor.
       STRIPE_WEBHOOK_SECRET: 'whsec_teste_1234567890abcdef',
+      // Preco FIXO so' pra teste (nao e' o da Stripe de verdade) — os testes
+      // do plano ilimitado montam eventos com este id pra exercitar a regra
+      // que liga/desliga `creditosIlimitados`.
+      STRIPE_PRICE_ILIMITADO: 'price_teste_ilimitado',
+      STRIPE_PRICE_ASSINATURA: 'price_teste_assinatura_pro',
     },
     globalSetup: ['./src/test/globalSetup.ts'],
     // Um unico arquivo toca no banco; rodar sem paralelismo de arquivos evita

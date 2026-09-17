@@ -14,6 +14,7 @@ const stripe = new Stripe(env.STRIPE_SECRET_KEY);
 
 const ASSINATURA_LOOKUP_KEY = 'price3d_assinatura_pro_mensal';
 const PACOTE_LOOKUP_KEY = 'price3d_pacote_300';
+const ILIMITADO_LOOKUP_KEY = 'price3d_assinatura_ilimitado_mensal';
 
 async function obterOuCriarPrecoAssinatura(): Promise<string> {
   const existentes = await stripe.prices.list({ lookup_keys: [ASSINATURA_LOOKUP_KEY], limit: 1 });
@@ -60,9 +61,36 @@ async function obterOuCriarPrecoPacote(): Promise<string> {
   return preco.id;
 }
 
+async function obterOuCriarPrecoIlimitado(): Promise<string> {
+  const existentes = await stripe.prices.list({ lookup_keys: [ILIMITADO_LOOKUP_KEY], limit: 1 });
+  if (existentes.data[0]) {
+    console.log(`Ilimitado ja existia: ${existentes.data[0].id}`);
+    return existentes.data[0].id;
+  }
+
+  const produto = await stripe.products.create({
+    name: 'Price 3D Ilimitado',
+    description: 'Creditos ILIMITADOS enquanto a assinatura estiver ativa — orcamentos e PDFs sem consumir saldo.',
+  });
+  const preco = await stripe.prices.create({
+    product: produto.id,
+    currency: 'eur',
+    unit_amount: 1490, // EUR 14,90
+    recurring: { interval: 'month' },
+    lookup_key: ILIMITADO_LOOKUP_KEY,
+    // Sem `creditos` no metadata de proposito: este plano nao credita saldo,
+    // liga a flag `creditosIlimitados` do usuario (ver creditos/service.ts).
+    metadata: { ilimitado: 'true' },
+  });
+  console.log(`Ilimitado criado: ${preco.id}`);
+  return preco.id;
+}
+
 const idAssinatura = await obterOuCriarPrecoAssinatura();
 const idPacote = await obterOuCriarPrecoPacote();
+const idIlimitado = await obterOuCriarPrecoIlimitado();
 
 console.log('\nCole isto no backend/.env (e no Render, nas env vars do backend):\n');
 console.log(`STRIPE_PRICE_ASSINATURA="${idAssinatura}"`);
 console.log(`STRIPE_PRICE_PACOTE="${idPacote}"`);
+console.log(`STRIPE_PRICE_ILIMITADO="${idIlimitado}"`);

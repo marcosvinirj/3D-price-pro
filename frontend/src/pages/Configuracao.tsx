@@ -60,7 +60,7 @@ export function ConfiguracaoPage() {
 
       {form && (
         <Card>
-          <form onSubmit={salvar} className="grid grid-cols-2 gap-4">
+          <form onSubmit={salvar} className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <Field label="Preço da energia (€/kWh)">
               <Input type="number" min="0" step="0.01" value={form.precoKwh} onChange={(e) => set('precoKwh', e.target.value)} required />
             </Field>

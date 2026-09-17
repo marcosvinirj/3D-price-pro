@@ -17,7 +17,7 @@ export function CreditosPage() {
   const { saldo, carregando, recarregar } = useCreditos();
   const [searchParams, setSearchParams] = useSearchParams();
   const [erro, setErro] = useState<string | null>(null);
-  const [processando, setProcessando] = useState<'assinatura' | 'pacote' | 'portal' | null>(null);
+  const [processando, setProcessando] = useState<'assinatura' | 'pacote' | 'ilimitado' | 'portal' | null>(null);
 
   const checkout = searchParams.get('checkout');
 
@@ -32,7 +32,7 @@ export function CreditosPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  async function irParaCheckout(tipo: 'assinatura' | 'pacote') {
+  async function irParaCheckout(tipo: 'assinatura' | 'pacote' | 'ilimitado') {
     setProcessando(tipo);
     setErro(null);
     try {
@@ -106,7 +106,7 @@ export function CreditosPage() {
         )}
       </Card>
 
-      <div className="grid gap-4 sm:grid-cols-2">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <Card titulo="Assinatura Price 3D Pro">
           <div className="text-3xl font-bold text-slate-800 dark:text-slate-100">
             €9,90<span className="text-base font-medium text-slate-400 dark:text-slate-500">/mês</span>
@@ -134,6 +134,20 @@ export function CreditosPage() {
           >
             {processando === 'pacote' ? 'Redirecionando...' : 'Comprar créditos'}
           </Button>
+        </Card>
+
+        <Card titulo="Price 3D Ilimitado">
+          <div className="text-3xl font-bold text-slate-800 dark:text-slate-100">
+            €14,90<span className="text-base font-medium text-slate-400 dark:text-slate-500">/mês</span>
+          </div>
+          <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">
+            Créditos ilimitados enquanto a assinatura estiver ativa — orçamentos e PDFs sem consumir saldo.
+          </p>
+          {!saldo?.ilimitado && (
+            <Button className="mt-4 w-full" onClick={() => irParaCheckout('ilimitado')} disabled={processando !== null}>
+              {processando === 'ilimitado' ? 'Redirecionando...' : 'Assinar ilimitado'}
+            </Button>
+          )}
         </Card>
       </div>
 

@@ -13,11 +13,15 @@ import { InsumosPage } from './pages/Insumos';
 import { ConfiguracaoPage } from './pages/Configuracao';
 import { MoedasPage } from './pages/Moedas';
 import { CreditosPage } from './pages/Creditos';
+import { CalculadoraPublicaPage } from './pages/CalculadoraPublica';
 
-/** Bloqueia rotas quando nao autenticado. */
+/**
+ * Bloqueia rotas quando nao autenticado. Visitante sem conta cai na
+ * calculadora publica (porta de entrada do site), nao direto no login.
+ */
 function Protegido({ children }: { children: JSX.Element }) {
   const { autenticado } = useAuth();
-  return autenticado ? children : <Navigate to="/login" replace />;
+  return autenticado ? children : <Navigate to="/calculadora" replace />;
 }
 
 export function App() {
@@ -25,6 +29,8 @@ export function App() {
   return (
     <Routes>
       <Route path="/login" element={autenticado ? <Navigate to="/" replace /> : <LoginPage />} />
+      {/* Calculadora publica — acessivel sem conta (porta de entrada do site). */}
+      <Route path="/calculadora" element={<CalculadoraPublicaPage />} />
       <Route
         element={
           <Protegido>

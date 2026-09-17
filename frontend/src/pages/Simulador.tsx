@@ -499,7 +499,7 @@ export function SimuladorPage() {
         )}
 
         <Card titulo="Dados do orçamento">
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <Field label="Nome do cliente">
               <Input value={form.cliente} onChange={(e) => set('cliente', e.target.value)} placeholder="Ex.: Maria Silva" />
             </Field>
@@ -566,7 +566,7 @@ export function SimuladorPage() {
                     Remover
                   </button>
                 </div>
-                <div className="grid grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <Field label="Nome da peça (opcional)">
                     <Input
                       value={it.nome}
@@ -602,7 +602,7 @@ export function SimuladorPage() {
                     </span>
                   </Field>
                 </div>
-                <div className="mt-3 grid grid-cols-2 gap-3">
+                <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
                   <Field label="Tempo de impressão">
                     <DuracaoInput
                       horas={it.tempoImpressaoHoras}
@@ -690,7 +690,7 @@ export function SimuladorPage() {
         </Card>
 
         <Card titulo="Parâmetros">
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <Field label="Taxa de falha (%)">
               <Input type="number" min="0" max="100" step="1" value={form.taxaFalhaPct} onChange={(e) => set('taxaFalhaPct', e.target.value)} />
             </Field>
@@ -806,7 +806,7 @@ export function SimuladorPage() {
           </div>
 
           {r && (
-            <div className="mt-4 grid grid-cols-3 gap-3 border-t border-slate-100 pt-4 dark:border-slate-800">
+            <div className="mt-4 grid grid-cols-1 gap-3 border-t border-slate-100 pt-4 sm:grid-cols-3 dark:border-slate-800">
               <Kpi rotulo="Custo total" valor={fmt(r.custos.custoComFalha)} />
               <Kpi rotulo="Lucro" valor={fmt(r.margem.lucro)} />
               <Kpi rotulo="Markup sobre o custo" valor={pct(r.margem.markupSobreCusto)} />

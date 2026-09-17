@@ -24,6 +24,8 @@ services:
         sync: false
       - key: STRIPE_PRICE_PACOTE
         sync: false
+      - key: STRIPE_PRICE_ILIMITADO
+        sync: false
       - key: STRIPE_WEBHOOK_SECRET
         sync: false
       - key: FRONTEND_URL

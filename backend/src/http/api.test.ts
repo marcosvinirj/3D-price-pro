@@ -485,3 +485,184 @@ describe('Webhook do Stripe: credita pacote avulso e e idempotente', () => {
       .expect(400);
   });
 });
+
+describe('Calculadora publica (sem conta) e liberacao do preco apos cadastro', () => {
+  it('POST /publico/simular funciona SEM token e nao exige catalogo de ninguem', async () => {
+    const r = await request(app)
+      .post('/publico/simular')
+      .send({ pesoG: 50, precoKg: 20, tempoImpressaoH: 4, margemLucro: 0.6 })
+      .expect(200);
+
+    expect(r.body.resultado.precoFinal).toBeGreaterThan(0);
+    expect(r.body.resultado.custos.custoMaterial).toBeCloseTo((50 * 20) / 1000 * 1.05, 4);
+  });
+
+  it('POST /publico/simular rejeita entrada fora dos limites (formulario aberto na internet)', async () => {
+    await request(app).post('/publico/simular').send({ pesoG: 999_999, precoKg: 20, tempoImpressaoH: 4 }).expect(400);
+    await request(app).post('/publico/simular').send({ pesoG: 50, precoKg: 20, tempoImpressaoH: 4, margemLucro: 1 }).expect(400);
+    await request(app).post('/publico/simular').send({ pesoG: -5, precoKg: 20, tempoImpressaoH: 4 }).expect(400);
+  });
+
+  it('cadastro concede 100 de bonus e liberar o preco consome 20 pelo mesmo caminho de um orcamento', async () => {
+    const email = `funil-${Date.now()}@teste.local`;
+    const registro = await request(app).post('/auth/registro').send({ email, senha: 'senha12345' }).expect(201);
+    const token = registro.body.token as string;
+
+    const saldoInicial = await request(app).get('/creditos').set(auth(token)).expect(200);
+    expect(saldoInicial.body.creditos).toBe(100);
+
+    const depois = await request(app).post('/creditos/revelar').set(auth(token)).expect(200);
+    expect(depois.body.creditos).toBe(80);
+
+    // Historico registra o consumo com a referencia da origem (auditoria).
+    const usuario = await prisma.user.findUniqueOrThrow({ where: { email } });
+    const mov = await prisma.creditoTransacao.findMany({ where: { usuarioId: usuario.id }, orderBy: { id: 'asc' } });
+    expect(mov.map((m) => [m.tipo, m.quantidade])).toEqual([
+      ['bonus_cadastro', 100],
+      ['consumo_orcamento', -20],
+    ]);
+    expect(mov[1]!.referencia).toBe('simulacao_publica');
+  });
+
+  it('liberar o preco sem token e rejeitado (401)', async () => {
+    await request(app).post('/creditos/revelar').expect(401);
+  });
+});
+
+describe('Plano ILIMITADO: assinatura liga/desliga creditosIlimitados', () => {
+  const SEGREDO_TESTE = 'whsec_teste_1234567890abcdef';
+  const PRECO_ILIMITADO = 'price_teste_ilimitado'; // mesmo valor de vitest.config.ts
+  const PRECO_PRO = 'price_teste_assinatura_pro';
+
+  /** Monta e envia um evento de assinatura assinado, como o Stripe faria. */
+  async function enviarEventoAssinatura(opcoes: {
+    customerId: string;
+    precoId: string;
+    status: string;
+    tipo?: string;
+  }) {
+    const evento = {
+      id: `evt_teste_${Date.now()}_${Math.random().toString(36).slice(2)}`,
+      object: 'event',
+      type: opcoes.tipo ?? 'customer.subscription.created',
+      api_version: '2024-06-20',
+      created: Math.floor(Date.now() / 1000),
+      data: {
+        object: {
+          id: `sub_teste_${Math.random().toString(36).slice(2)}`,
+          object: 'subscription',
+          customer: opcoes.customerId,
+          status: opcoes.status,
+          items: {
+            data: [
+              {
+                price: { id: opcoes.precoId },
+                current_period_end: Math.floor(Date.now() / 1000) + 30 * 24 * 3600,
+              },
+            ],
+          },
+        },
+      },
+    };
+    const payload = JSON.stringify(evento);
+    const assinatura = Stripe.webhooks.generateTestHeaderString({ payload, secret: SEGREDO_TESTE });
+    await request(app)
+      .post('/webhooks/stripe')
+      .set('stripe-signature', assinatura)
+      .set('Content-Type', 'application/json')
+      .send(payload)
+      .expect(200);
+  }
+
+  it('assinatura ILIMITADA ativa liga creditosIlimitados; cancelada desliga', async () => {
+    const customerId = `cus_ilimitado_${ctx.operadorId}`;
+    await prisma.user.update({ where: { id: ctx.operadorId }, data: { stripeCustomerId: customerId } });
+
+    await enviarEventoAssinatura({ customerId, precoId: PRECO_ILIMITADO, status: 'active' });
+    expect(
+      (await prisma.user.findUniqueOrThrow({ where: { id: ctx.operadorId } })).creditosIlimitados,
+    ).toBe(true);
+
+    await enviarEventoAssinatura({
+      customerId,
+      precoId: PRECO_ILIMITADO,
+      status: 'canceled',
+      tipo: 'customer.subscription.deleted',
+    });
+    expect(
+      (await prisma.user.findUniqueOrThrow({ where: { id: ctx.operadorId } })).creditosIlimitados,
+    ).toBe(false);
+  });
+
+  it('assinatura de OUTRO plano (Pro) nao mexe em creditosIlimitados — protege isencao manual', async () => {
+    const customerId = `cus_pro_${ctx.operadorId}`;
+    await prisma.user.update({
+      where: { id: ctx.operadorId },
+      // Conta cortesia: isencao ligada na mao, sem assinatura ilimitada.
+      data: { stripeCustomerId: customerId, creditosIlimitados: true },
+    });
+
+    await enviarEventoAssinatura({ customerId, precoId: PRECO_PRO, status: 'active' });
+
+    // O evento do Pro NAO pode revogar a isencao manual.
+    expect(
+      (await prisma.user.findUniqueOrThrow({ where: { id: ctx.operadorId } })).creditosIlimitados,
+    ).toBe(true);
+  });
+
+  it('trocar do ILIMITADO pra outro plano (Portal da Stripe) tira o ilimitado', async () => {
+    const customerId = `cus_troca_${ctx.operadorId}`;
+    await prisma.user.update({ where: { id: ctx.operadorId }, data: { stripeCustomerId: customerId } });
+
+    await enviarEventoAssinatura({ customerId, precoId: PRECO_ILIMITADO, status: 'active' });
+    expect(
+      (await prisma.user.findUniqueOrThrow({ where: { id: ctx.operadorId } })).creditosIlimitados,
+    ).toBe(true);
+
+    // Mesma assinatura, agora apontando pro plano Pro (troca no Portal).
+    await enviarEventoAssinatura({
+      customerId,
+      precoId: PRECO_PRO,
+      status: 'active',
+      tipo: 'customer.subscription.updated',
+    });
+    expect(
+      (await prisma.user.findUniqueOrThrow({ where: { id: ctx.operadorId } })).creditosIlimitados,
+    ).toBe(false);
+  });
+
+  it('fatura paga do plano ILIMITADO nao credita os 600 da assinatura Pro', async () => {
+    const customerId = `cus_fatura_${ctx.operadorId}`;
+    await prisma.user.update({ where: { id: ctx.operadorId }, data: { stripeCustomerId: customerId } });
+
+    const antes = (await prisma.user.findUniqueOrThrow({ where: { id: ctx.operadorId } })).creditos;
+
+    const evento = {
+      id: `evt_fatura_${Date.now()}`,
+      object: 'event',
+      type: 'invoice.payment_succeeded',
+      api_version: '2024-06-20',
+      created: Math.floor(Date.now() / 1000),
+      data: {
+        object: {
+          id: `in_teste_${Date.now()}`,
+          object: 'invoice',
+          customer: customerId,
+          subscription: 'sub_teste_ilimitado',
+          lines: { data: [{ price: { id: PRECO_ILIMITADO } }] },
+        },
+      },
+    };
+    const payload = JSON.stringify(evento);
+    const assinatura = Stripe.webhooks.generateTestHeaderString({ payload, secret: SEGREDO_TESTE });
+    await request(app)
+      .post('/webhooks/stripe')
+      .set('stripe-signature', assinatura)
+      .set('Content-Type', 'application/json')
+      .send(payload)
+      .expect(200);
+
+    const depois = (await prisma.user.findUniqueOrThrow({ where: { id: ctx.operadorId } })).creditos;
+    expect(depois).toBe(antes); // ilimitado nao ganha saldo — o acesso vem da flag
+  });
+});
